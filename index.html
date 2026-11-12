@@ -230,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 12</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 14</p></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -843,10 +843,10 @@ const Player = {
     this.stop();
     this.prio = prio; this.playing = true; this.onEnd = onEnd || null;
     const token = this.token = (this.token || 0) + 1;
-    this.emit(true);
     const real = (this.cache[src] && this.cache[src] !== "pending") ? this.cache[src] : src;
     const go = () => {
       if (token !== this.token || !this.playing) return;    // intussen gestopt of iets anders gestart
+      this.emit(true);                                       // pas nu: de microfoon is (via gate) al helemaal uit
       try { this.el.src = real; this.el.currentTime = 0; const p = this.el.play(); if (onStart) onStart(); if (p && p.catch) p.catch(() => this.finish(false)); }
       catch (e) { this.finish(false); }
     };
@@ -1135,7 +1135,7 @@ const PATIENCE = {
   moveOnSilent: 6000,       // na hulp helemaal niets meer gezegd: na zoveel ms samen verder
 };
 // iPhone (Safari) geeft woorden later door; daarom daar kortere wachttijden, anders stapelt de vertraging op
-if (IS_IOS) Object.assign(PATIENCE, { stuckAfter: 4500, stuckAfterTry: 1200, quietBeforeHelp: 1200,
+if (IS_IOS) Object.assign(PATIENCE, { stuckAfter: 4500, stuckAfterTry: 1600, quietBeforeHelp: 1500,
                                       misreadDelay: 600, misreadQuiet: 1000, stuckAfterMisread: 6000 });
 
 function startBook(book, keepPhoto = false) {
@@ -1187,7 +1187,8 @@ $("readBtn").onclick = () => {
     if (!R.reading) return;
     R.ready = true; R.lastProgress = Date.now(); R.lastHeard = Date.now();
     if (R.words[R.pos]) R.words[R.pos].el.classList.add("now");
-    $("readBtn").textContent = "👂 Lees maar, ik luister!";
+    // Pas "ik luister" tonen als de microfoon ook echt weer aan staat (anders mist hij het eerste woord)
+    $("readBtn").textContent = R.micAliveAt > R.lastTalk ? "👂 Lees maar, ik luister!" : "🤫 Even wachten…";
   });
   R.timer = setInterval(checkStuck, 300);
 };
@@ -1202,9 +1203,9 @@ Player.onTalk(talking => {
   if (!R.listener || !R.reading) return;
   R.lastTalk = Date.now();
   if (!VOICE_WHILE_READING) return;
-  if (talking) { R.listener.pause(); if (R.ready) $("readBtn").textContent = "🤫 Boekoe praat… even wachten"; return; }
+  if (talking) { R.listener.pause(); $("readBtn").textContent = "🤫 Boekoe praat… even wachten"; return; }
   setTimeout(() => {
-    if (!R.reading || R.micLost || !R.listener) return;
+    if (!R.reading || R.micLost || !R.listener || Player.playing) return;   // praat Boekoe alweer? dan niet aanzetten
     R.resumedAt = Date.now(); R.listener.resume();
     // Komt de microfoon niet terug (gebeurt op iPhone)? Dan het kind laten tikken: een tik mag hem altijd aanzetten.
     setTimeout(() => {
@@ -1231,7 +1232,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 12 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 14 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1239,7 +1240,7 @@ function onMicState(state, detail) {
     else if (detail === "language") showMicError("Nederlandse spraakherkenning is niet beschikbaar in deze browser.");
     else if (detail === "network") showMicError("De spraakherkenning heeft internet nodig. Controleer je verbinding.");
     else if (detail === "unsupported") showMicError("Meeluisteren werkt niet in deze browser.");
-    if (detail === "not-allowed" && R.reading && R.ready) {
+    if (detail === "not-allowed" && R.reading && R.ready && R.micAliveAt > 0) {   // werkte eerst wel: dan is hij even weggevallen
       // Microfoon viel weg midden in het lezen: NIET opnieuw beginnen, maar verder waar je was
       R.micLost = true;
       showMicError("De microfoon stopte even. Tik op de knop om verder te lezen waar je was.");
@@ -1311,7 +1312,9 @@ function onHeard(finalWords, interimWords) {
     // Kind probeert het woord (hakkelt)? Niet als het gewoon een vorig woord herhaalt (terug-lezen).
     const lastW = normalize(heardRaw[heardRaw.length - 1] || "");
     const reread = R.expected.slice(Math.max(0, pos - 4), pos).some(e => e === lastW || e.includes(lastW) || similarity(e, lastW) >= 0.7);
-    if (!reread && lastW.length >= 2) R.tried = true;   // losse letters (staartje van hakken) tellen niet
+    const target = R.expected[pos] || "";
+    const looksLike = lastW[0] === target[0] || similarity(lastW, target) >= 0.4;   // hakken begint met dezelfde klank
+    if (!reread && lastW.length >= 2 && looksLike) R.tried = true;   // losse letters en "eh", "wacht" tellen niet
   }
   R.heardLen = heardRaw.length;
   if (R.words[pos]) R.words[pos].el.classList.add("now");
