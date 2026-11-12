@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<!--
+  LEESMAATJE — test-app met Boekoe die echt meeluistert. Alles zit in dit ene bestand.
+   1. Maak in VS Code een nieuw bestand "index.html", plak alles hierin en sla op.
+   2. Open het in Google Chrome (rechtsklik in VS Code → Open with Live Server, of dubbelklik op het bestand).
+   3. Boekoe's stem: zet de map "audio" (uit boekoe-stem.zip) naast dit bestand. Zonder die map toont Boekoe alleen tekst.
+   Foto's uitlezen werkt pas als de app online staat met de serverfunctie.
+-->
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Leesmaatje</title>
+<meta name="theme-color" content="#6A4CE0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FFF8EE; --card:#FFFFFF; --ink:#2B2A33; --muted:#77727F;
+  --teal:#6A4CE0; --teal-d:#4E35B5; --teal-l:#ECE7FF;
+  --sun:#FFC94A; --coral:#FF7A59; --coral-l:#FFE6DE; --line:#EFE6D8;
+  --ok:#2FA36B; --ok-l:#DDF5E8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:#EDE6DA;color:var(--ink);font-family:Nunito,system-ui,sans-serif}
+.wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px 12px 28px;gap:12px}
+.phone{width:100%;max-width:400px;min-height:720px;background:var(--bg);border-radius:32px;
+  box-shadow:0 20px 50px rgba(60,40,10,.18), inset 0 0 0 1px rgba(0,0,0,.04);
+  overflow:hidden;display:flex;flex-direction:column;position:relative}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 20px 8px}
+.brand{font-family:"Baloo 2";font-weight:800;font-size:20px;color:var(--teal-d);display:flex;gap:8px;align-items:center}
+.brand svg{width:32px;height:32px}
+.pill{font-size:12px;font-weight:800;padding:6px 10px;border-radius:999px;background:var(--teal-l);color:var(--teal-d);border:0;cursor:pointer}
+.screen{flex:1;padding:8px 20px 20px;display:none;flex-direction:column;gap:14px;animation:in .25s ease}
+.screen.active{display:flex}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+h1,h2{font-family:"Baloo 2";margin:0;line-height:1.1}
+h1{font-size:30px} h2{font-size:22px}
+p{margin:0;line-height:1.45}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+#ocrFace svg .body-g{animation:bob .5s ease-in-out infinite alternate}
+.card{background:var(--card);border-radius:20px;padding:16px;border:1px solid var(--line)}
+label{font-weight:800;font-size:14px;display:block;margin-bottom:6px}
+input[type=text],select{width:100%;padding:12px 14px;border-radius:14px;border:2px solid var(--line);font:inherit;font-size:16px;background:#fff}
+input[type=text]:focus,select:focus{outline:none;border-color:var(--teal)}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.4}
+.check input{width:22px;height:22px;accent-color:var(--teal);flex:none;margin-top:1px}
+.btn{border:0;border-radius:18px;padding:16px 18px;font:inherit;font-weight:800;font-size:18px;cursor:pointer;
+  background:var(--teal);color:#fff;box-shadow:0 6px 16px rgba(78,53,181,.28);transition:transform .08s, box-shadow .08s}
+.btn:active{transform:scale(.98);box-shadow:0 2px 8px rgba(78,53,181,.25)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.big{font-size:22px;padding:22px}
+.btn.ghost{background:transparent;color:var(--teal-d);box-shadow:none;border:2px solid var(--teal-l)}
+.btn.sun{background:var(--sun);color:var(--ink);box-shadow:0 6px 16px rgba(217,165,42,.35)}
+.center{text-align:center;align-items:center}
+.row{display:flex;gap:10px;align-items:center}
+.between{justify-content:space-between}
+.stars{display:flex;gap:6px;justify-content:center;font-size:22px}
+
+/* ---------- Boekoe ---------- */
+.mascot-btn{border:0;background:none;padding:0;cursor:pointer;width:160px;height:160px;-webkit-tap-highlight-color:transparent}
+.mascot-btn svg{width:100%;height:100%;overflow:visible}
+.bk .eye{animation:blink 4.5s infinite;transform-origin:center;transform-box:fill-box}
+@keyframes blink{0%,94%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
+.bk .body-g{transform-origin:80px 150px;transform-box:view-box}
+.mascot-btn .bk .body-g{animation:breathe 3.2s ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.025,0.985)}}
+.bk.talking .mouth{animation:talk .16s ease-in-out infinite alternate;transform-origin:center;transform-box:fill-box}
+@keyframes talk{from{transform:scaleY(1)}to{transform:scaleY(.45)}}
+.bk.talking .body-g{animation:bob .32s ease-in-out infinite alternate}
+@keyframes bob{to{transform:translateY(-3px) rotate(-1.2deg)}}
+.bk.pop{animation:popface .45s cubic-bezier(.2,1.6,.4,1)}
+@keyframes popface{from{transform:scale(.85)}to{transform:none}}
+.bk.ears-wiggle .ear-l{animation:earL .5s ease-in-out 2}
+.bk.ears-wiggle .ear-r{animation:earR .5s ease-in-out 2}
+.ear-l{transform-origin:52px 66px;transform-box:view-box}.ear-r{transform-origin:108px 66px;transform-box:view-box}
+@keyframes earL{50%{transform:rotate(-12deg)}} @keyframes earR{50%{transform:rotate(12deg)}}
+
+/* spraakballon (gedeeld) */
+.say{display:flex;gap:10px;align-items:center;background:#F6F3FF;color:#3D3566;border-radius:18px;padding:10px 12px;
+  font-weight:700;font-size:16px;line-height:1.35;min-height:60px;text-align:left;width:100%}
+.say.show{animation:soft .4s ease}
+@keyframes soft{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.say.hidden{visibility:hidden}
+.say.good{background:#EEF8F2;color:#2C5E45}
+.say.tip{background:#FFF7E3;color:#6B5418}
+.say.fixit{background:#FFF1EC;color:#7A3F2E}
+.say-face{width:42px;height:42px;flex:none}
+.say-face svg{width:100%;height:100%;overflow:visible}
+.say-text{flex:1}
+.replay{flex:none;border:0;background:rgba(255,255,255,.75);width:36px;height:36px;border-radius:50%;font-size:16px;cursor:pointer;color:var(--teal-d)}
+.replay:active{transform:scale(.92)}
+.bubble{background:#fff;border:2px solid var(--line);border-radius:20px;padding:12px 12px 12px 16px;font-weight:700;position:relative;max-width:320px;
+  display:flex;gap:8px;align-items:center;text-align:left;min-height:54px}
+.bubble:after{content:"";position:absolute;left:50%;bottom:-10px;width:16px;height:16px;background:#fff;
+  border-right:2px solid var(--line);border-bottom:2px solid var(--line);transform:translateX(-50%) rotate(45deg)}
+.bubble.show{animation:soft .4s ease}
+.bubble .replay{background:var(--teal-l)}
+.psst{border:0;background:#FFF1D6;color:#7A5A00;font:inherit;font-weight:800;font-size:14px;padding:8px 14px;border-radius:999px;cursor:pointer}
+
+/* lezen */
+.page{background:#fff;border-radius:22px;padding:20px 18px;border:1px solid var(--line);font-size:24px;line-height:1.75;font-weight:600;letter-spacing:.2px}
+.w{padding:1px 3px;border-radius:8px;cursor:pointer;transition:background .2s,color .2s}
+.w.now{background:var(--sun)}
+.w.ok{color:var(--ok)}
+.w.help{background:#FFF1D6;color:#8A6410}
+.w.fix{background:#FFE1D6;color:#9A4128;text-decoration:underline wavy #FF9C80 2px;text-underline-offset:5px}
+.progress{height:12px;background:var(--line);border-radius:999px;overflow:hidden}
+.progress>div{height:100%;width:0;background:var(--teal);border-radius:999px;transition:width .25s}
+.mic{display:flex;gap:4px;align-items:flex-end;height:22px}
+.mic span{width:5px;background:var(--teal);border-radius:3px;height:6px}
+.listening .mic span{animation:bar .7s ease-in-out infinite}
+.mic span:nth-child(2){animation-delay:.1s}.mic span:nth-child(3){animation-delay:.2s}.mic span:nth-child(4){animation-delay:.3s}
+@keyframes bar{50%{height:22px}}
+.filelabel{display:block}
+.filelabel input{display:none}
+.preview{width:100%;max-height:140px;object-fit:cover;border-radius:16px;display:none}
+
+/* klaar */
+.sticker{width:120px;height:120px;animation:pop .5s cubic-bezier(.2,1.6,.4,1);cursor:pointer;border:0;background:none;padding:0}
+@keyframes pop{from{transform:scale(.2) rotate(-20deg)}to{transform:none}}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+.stat{background:#fff;border:1px solid var(--line);border-radius:18px;padding:12px;text-align:center}
+.stat b{font-family:"Baloo 2";font-size:28px;display:block;color:var(--teal-d)}
+.opts{display:grid;gap:8px;width:100%}
+.opt{background:#fff;border:2px solid var(--line);border-radius:16px;padding:14px;font:inherit;font-weight:800;font-size:17px;cursor:pointer;text-align:left}
+.opt.right{border-color:var(--ok);background:var(--ok-l)}
+.opt.wrong{border-color:var(--coral);background:var(--coral-l)}
+
+/* ouder */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:var(--coral-l);color:#B5442A;font-weight:800;border-radius:999px;padding:6px 12px;font-size:14px}
+.chip.good{background:var(--ok-l);color:#1F7A4D}
+button.chip{border:0;font:inherit;font-weight:800;font-size:14px;cursor:pointer}
+.tabbar{display:flex;border-top:1px solid var(--line);background:#fff}
+.tab{flex:1;border:0;background:none;padding:12px 4px 14px;font:inherit;font-weight:800;font-size:12px;color:var(--muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
+.tab.on{color:var(--teal-d)}
+.tab svg{width:24px;height:24px}
+.tab[hidden]{display:none}
+
+details.cat{background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden}
+details.cat>summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:16px}
+details.cat>summary::-webkit-details-marker{display:none}
+.cat-body{padding:0 12px 14px;display:grid;gap:14px}
+.cb{border:0;border-radius:999px;padding:7px 11px;font:inherit;font-weight:800;font-size:13px;cursor:pointer;background:var(--teal-l);color:var(--teal-d)}
+.cb.up{background:var(--teal);color:#fff}
+.cb.del{background:#F3EFEA;color:var(--muted)}
+.err{font-size:12px;font-weight:800;color:#B5442A}
+
+/* ---------- app ---------- */
+.wrap{padding-top:max(16px, env(safe-area-inset-top))}
+@media (max-width:440px){ .wrap{padding:0} .phone{border-radius:0;min-height:100vh;box-shadow:none} }
+.w.skip{color:var(--muted);text-decoration:underline dotted 2px;text-underline-offset:5px}
+.err{color:#B5442A;font-weight:700}
+details.heard{font-size:13px;color:var(--muted)}
+details.heard summary{cursor:pointer;font-weight:800}
+details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 10px;max-height:90px;overflow:auto}
+.opt .small{font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="phone">
+    <div class="topbar">
+      <div class="brand"><span id="brandFace"></span>Leesmaatje</div>
+      <div class="row" style="gap:6px"><button class="pill" id="soundBtn" aria-label="Geluid aan of uit">🔊</button><button class="pill" id="who">Ouder</button></div>
+    </div>
+
+    <!-- 1. OUDER-START -->
+    <section class="screen" id="s-onboard">
+      <h1>Welkom! 👋</h1>
+      <p class="muted">Stel Leesmaatje in voor je kind. Dat duurt één minuut.</p>
+      <div class="card" style="display:grid;gap:14px">
+        <div><label for="naam">Naam van je kind</label><input type="text" id="naam" value="" placeholder="Bijv. Sem" maxlength="20"></div>
+        <div><label for="groep">Groep</label>
+          <select id="groep"><option>3</option><option selected>4</option><option>5</option><option>6</option></select></div>
+        <label class="check"><input type="checkbox" id="ok1"> Ik geef toestemming dat de stem van mijn kind tijdens het lezen wordt herkend door de spraakherkenning van de browser (van Google of Apple). Leesmaatje bewaart geen opnames.</label>
+        <label class="check"><input type="checkbox" id="ok2"> Ik ben de ouder of verzorger van dit kind.</label>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btn" id="startBtn" disabled>Klaar, naar het kind-scherm</button>
+    </section>
+
+    <!-- 2. KIND-START -->
+    <section class="screen center" id="s-home">
+      <div style="height:4px"></div>
+      <div class="bubble" id="sayHome"><span class="say-text">Hoi!</span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
+      <button class="mascot-btn" id="mascotBtn" aria-label="Boekoe"></button>
+      <button class="psst" id="psstBtn">🤫 Pssst… Boekoe vertelt</button>
+      <div class="stars" id="stars"></div>
+      <p class="muted small" id="starsTxt" style="margin-top:-8px"></p>
+      <div style="flex:1"></div>
+      <label class="filelabel" style="width:100%">
+        <input type="file" accept="image/*" capture="environment" id="photo">
+        <span class="btn big" style="display:block">📷 Maak een foto van je bladzijde</span>
+      </label>
+      <button class="btn ghost" id="chooseStory" style="width:100%">📚 Kies een verhaaltje</button>
+    </section>
+
+    <!-- 2b. VERHAAL KIEZEN -->
+    <section class="screen" id="s-stories">
+      <h1>Kies een verhaaltje</h1>
+      <div id="storyList" style="display:grid;gap:10px"></div>
+      <details class="cat"><summary><span>✍️ Zelf een tekst plakken</span></summary>
+        <div class="cat-body"><textarea id="ownText" rows="5" placeholder="Plak of typ hier een stukje tekst…" style="width:100%;border:2px solid var(--line);border-radius:14px;padding:10px;font:inherit"></textarea>
+        <button class="btn" id="useOwnText">Deze tekst lezen</button></div></details>
+    </section>
+
+    <!-- 3. LEZEN -->
+    <section class="screen" id="s-read">
+      <img class="preview" id="prev" alt="Je foto">
+      <div class="row between">
+        <h2 id="readTitle">Lees maar hardop!</h2>
+        <div class="row" id="micwrap" title="Boekoe luistert"><div class="mic"><span></span><span></span><span></span><span></span></div></div>
+      </div>
+      <div class="progress"><div id="bar"></div></div>
+      <div class="page" id="page"></div>
+      <div class="card center" id="ocrBox" style="display:none;gap:12px;flex-direction:column">
+        <div class="say-face" id="ocrFace" style="width:90px;height:90px"></div>
+        <b id="ocrMsg">Boekoe leest je bladzijde…</b>
+        <p class="small muted" id="ocrSub"></p>
+        <div class="row" id="ocrBtns" style="display:none;flex-wrap:wrap;justify-content:center">
+          <label class="filelabel"><input type="file" accept="image/*" capture="environment" id="photo2"><span class="cb up" style="display:inline-block;padding:10px 14px">📷 Nieuwe foto</span></label>
+          <button class="cb" id="ocrStories" style="padding:10px 14px">📚 Verhaaltje kiezen</button>
+        </div>
+      </div>
+      <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
+      <p class="small err" id="micErr" style="display:none"></p>
+      <details class="heard" id="heardBox"><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p></details>
+      <div style="flex:1"></div>
+      <div class="row">
+        <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
+        <button class="btn ghost" id="stopBtn" style="display:none">Klaar</button>
+      </div>
+    </section>
+
+    <!-- 4. KLAAR -->
+    <section class="screen center" id="s-done">
+      <button class="sticker" id="stickerBtn" aria-label="Sticker">
+        <svg viewBox="0 0 120 120" width="120" height="120"><circle cx="60" cy="60" r="56" fill="#FFC94A" stroke="#fff" stroke-width="6"/><path d="M60 22 L70 48 L98 49 L76 66 L84 93 L60 77 L36 93 L44 66 L22 49 L50 48Z" fill="#fff"/></svg>
+      </button>
+      <h1 id="doneTitle">Super!</h1>
+      <div class="say hidden" id="sayDone"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
+      <div class="stats">
+        <div class="stat"><b id="stWpm">–</b>woorden per minuut</div>
+        <div class="stat"><b id="stAcc">–</b>zelf goed gelezen</div>
+      </div>
+      <div class="card" style="width:100%;text-align:left;display:grid;gap:8px">
+        <b>💎 Woordenschatkist</b>
+        <p class="small muted">Deze woorden oefenen we nog even. Tik erop om ze in stukjes te zien.</p>
+        <div class="chips" id="chest"></div>
+      </div>
+      <div class="card" style="width:100%;text-align:left;display:grid;gap:10px" id="quizCard">
+        <b>📖 Weet jij het nog?</b>
+        <p id="quizQ"></p>
+        <div class="opts" id="quiz"></div>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btn sun" id="againBtn" style="width:100%">Nog een bladzijde 📖</button>
+    </section>
+
+    <!-- 5. OUDER-OVERZICHT -->
+    <section class="screen" id="s-parent">
+      <h1 id="pTitle">Deze week</h1>
+      <div class="card" style="display:grid;gap:10px">
+        <div class="row between"><b>Leestempo</b><span class="chip good" id="trend"></span></div>
+        <svg id="chart" viewBox="0 0 320 150" width="100%"></svg>
+        <p class="small muted" id="chartNote">Woorden per minuut per leesbeurt</p>
+      </div>
+      <div class="card" style="display:grid;gap:10px">
+        <b>Oefent nog met</b>
+        <div class="chips" id="hardWords"></div>
+      </div>
+      <div class="card" style="background:var(--teal-l);border-color:transparent">
+        <b>💡 Tip</b>
+        <p class="small" style="margin-top:6px">Korte leesmomenten van 5 à 10 minuten werken het best. Lees de lastige woorden uit de schatkist samen nog eens, bijvoorbeeld aan tafel.</p>
+      </div>
+    </section>
+
+    <nav class="tabbar">
+      <button class="tab" data-go="s-home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Kind</button>
+      <button class="tab" data-go="s-parent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Voortgang</button>
+      <button class="tab" data-go="s-onboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>Instellingen</button>
+    </nav>
+  </div>
+</div>
+<script>
+"use strict";
+(() => {
+/* ===================== aligner: vergelijkt wat het kind zegt met de tekst ===================== */
+/**
+ * aligner.js — vergelijkt wat het kind zegt met de tekst op de bladzijde.
+ *
+ * De spraakherkenning geeft losse woorden terug ("bas de beer zoekt zijn rode muts").
+ * Wij leggen die woorden naast de verwachte tekst en bepalen per woord:
+ *   - "ok"       goed gelezen
+ *   - "misread"  er werd iets gezegd dat erop lijkt, maar niet klopt (bijv. "hoopt" i.p.v. "hoort")
+ *   - "fixed"    eerst fout gelezen, daarna alsnog goed
+ *   - "skipped"  overgeslagen (het kind las het woord erna)
+ *   - "pending"  nog niet aan de beurt
+ *
+ * Het vergelijken gebeurt telkens opnieuw over alles wat er tot nu toe gehoord is.
+ * Daardoor maakt het niet uit dat de spraakherkenning tussendoor van gedachten verandert.
+ * Dit bestand heeft geen browser nodig en wordt getest met `npm test`.
+ */
+
+const NUMBERS = { 0:"nul",1:"een",2:"twee",3:"drie",4:"vier",5:"vijf",6:"zes",7:"zeven",8:"acht",9:"negen",10:"tien",
+  11:"elf",12:"twaalf",13:"dertien",14:"veertien",15:"vijftien",16:"zestien",17:"zeventien",18:"achttien",19:"negentien",20:"twintig" };
+
+/** Maak een woord vergelijkbaar: kleine letters, geen leestekens of accenten, een paar Nederlandse klanken gelijkgetrokken. */
+function normalize(word) {
+  let w = String(word).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  w = w.replace(/[^a-z0-9]/g, "");
+  if (/^\d+$/.test(w) && NUMBERS[+w]) w = NUMBERS[+w];
+  return w
+    .replace(/ij/g, "y").replace(/ei/g, "y")      // ij en ei klinken hetzelfde
+    .replace(/au/g, "ou")                          // au en ou klinken hetzelfde
+    .replace(/(d|dt)$/, "t");                      // eind-d klinkt als t
+}
+
+/** Splits een tekst in woorden (leestekens blijven bij het woord voor de weergave). */
+function tokenize(text) {
+  return String(text).split(/\s+/).filter(Boolean);
+}
+
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Hoe erg lijken twee (al genormaliseerde) woorden op elkaar: 0 = niet, 1 = gelijk. */
+function similarity(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  return 1 - levenshtein(a, b) / Math.max(a.length, b.length);
+}
+
+const THRESHOLDS = {
+  match: 0.7,      // vanaf hier telt een lang woord als goed gelezen (bijna goed = goed)
+  skip: 0.85,      // zo zeker moeten we zijn voordat we zeggen dat een woord is overgeslagen
+  maxJump: 12,     // hoe ver we maximaal vooruit mogen springen om weer aan te haken
+  lookBack: 25,    // terug-lezen tot zoveel woorden terug geldt niet als fout
+  misread: 0.4,    // hierboven (maar onder match) is het een leesfout; daaronder negeren we het (bijv. "eh")
+};
+
+/** Telt dit als goed gelezen?
+ *  We zijn bewust mild: de spraakherkenning verstaat kinderstemmen niet perfect,
+ *  en een onterechte "fout" is voor een kind veel vervelender dan een gemiste.
+ *  Korte woorden (t/m 5 letters) mogen één letter verschillen, langere iets meer. */
+function matches(h, exp, t = THRESHOLDS) {
+  if (h === exp) return true;
+  if (exp.length <= 5) return h.length >= 2 && levenshtein(h, exp) <= 1;
+  return similarity(h, exp) >= t.match;
+}
+
+/** Korte woordjes ("de", "een", "in") laat de herkenning vaak weg. Die tellen we dan gewoon als gelezen. */
+const isSmall = w => w.length <= 3;
+
+/**
+ * Leg de gehoorde woorden naast de verwachte woorden.
+ * @param {string[]} expected  verwachte woorden (genormaliseerd)
+ * @param {string[]} heard     gehoorde woorden (genormaliseerd), in volgorde
+ * @returns {{pos:number, statuses:string[], misheard:(string|null)[]}}
+ *   pos = index van het woord dat nu aan de beurt is
+ */
+function align(expected, heard, t = THRESHOLDS) {
+  const statuses = expected.map(() => "pending");
+  const misheard = expected.map(() => null);
+  let p = 0;
+  for (let k = 0; k < heard.length && p < expected.length; k++) {
+    const h = heard[k];
+    if (!h) continue;
+    const exp = expected[p];
+
+    // 1. Goed gelezen?
+    if (matches(h, exp, t)) {
+      statuses[p] = statuses[p] === "misread" ? "fixed" : "ok";
+      p++;
+      continue;
+    }
+    // 2. Herkenning splitste één woord in tweeën ("bladzij" + "oren" voor "bladzijoren")?
+    const joined = h + (heard[k + 1] || "");
+    if (heard[k + 1] && matches(joined, exp, t)) {
+      statuses[p] = statuses[p] === "misread" ? "fixed" : "ok";
+      p++; k++;
+      continue;
+    }
+    // 3a. Woord bijna goed gelezen en het kind leest gewoon door? Dan telt het als goed: niet verbeteren.
+    if (statuses[p] === "misread" && p + 1 < expected.length && matches(h, expected[p + 1], t)) {
+      statuses[p] = "ok";
+      statuses[p + 1] = "ok";
+      p += 2;
+      continue;
+    }
+    // 3. Woord overgeslagen? (kind leest het volgende woord, en dat is duidelijk)
+    if (p + 1 < expected.length && h.length >= 3 && matches(h, expected[p + 1], t) && similarity(h, expected[p + 1]) >= t.skip) {
+      statuses[p] = statuses[p] === "misread" ? "misread" : (isSmall(expected[p]) ? "ok" : "skipped");
+      statuses[p + 1] = "ok";
+      p += 2;
+      continue;
+    }
+    // 4. Verder weg weer aangehaakt? Bijvoorbeeld omdat de microfoon even uit stond terwijl Boekoe praatte.
+    //    Alleen als twee gehoorde woorden achter elkaar precies kloppen, om vergissingen te voorkomen.
+    let jumped = false;
+    for (let j = 2; j <= t.maxJump && p + j + 1 < expected.length + 1; j++) {
+      const a = expected[p + j], b = expected[p + j + 1];
+      if (a && b && matches(h, a, t) && heard[k + 1] && matches(heard[k + 1], b, t)) {
+        for (let x = p; x < p + j; x++) if (statuses[x] === "pending") statuses[x] = isSmall(expected[x]) ? "ok" : "skipped";
+        statuses[p + j] = "ok"; statuses[p + j + 1] = "ok";
+        p += j + 2; k++; jumped = true;
+        break;
+      }
+    }
+    if (jumped) continue;
+    // 5. Leest het kind een stukje terug (bijv. de zin opnieuw)? Dat is geen fout: negeren.
+    let back = false;
+    for (let x = Math.max(0, p - t.lookBack); x < p; x++) if (matches(h, expected[x], t)) { back = true; break; }
+    if (back) continue;
+    // 6. Lijkt erop maar klopt niet: leesfout. We blijven op dit woord wachten.
+    if (h.length >= 3 && similarity(h, exp) >= t.misread) {
+      statuses[p] = "misread";
+      misheard[p] = h;
+      continue;
+    }
+    // 7. Anders: ruis of een tussenwoordje ("eh", "uhm") — negeren.
+  }
+  return { pos: p, statuses, misheard };
+}
+
+/** Handig: van gewone tekst naar gealigneerde status, voor tests en debuggen. */
+function alignText(expectedText, heardText) {
+  return align(tokenize(expectedText).map(normalize), tokenize(heardText).map(normalize));
+}
+
+/** Simpele lettergrepen-splitsing voor de "in stukjes"-hulp (benadering). */
+function syllables(word, known = {}) {
+  const w = String(word).toLowerCase().replace(/[^\p{L}]/gu, "");
+  if (known[w]) return known[w];
+  if (w.length <= 5) return [w];
+  const parts = w.match(/[^aeiouy]*[aeiouy]+(?:[^aeiouy](?=[^aeiouy]))?/gi) || [w];
+  const joined = parts.join("");
+  if (joined.length < w.length) parts[parts.length - 1] += w.slice(joined.length);
+  return parts;
+}
+
+/* ===================== listener: microfoon en spraakherkenning ===================== */
+/**
+ * listener.js — luistert via de microfoon en geeft de gehoorde woorden door.
+ *
+ * Gebruikt de spraakherkenning die in de browser zit (Chrome op Android en computer,
+ * Safari op iPhone/iPad met Siri & Dicteren aan). Geen extra kosten, geen server nodig.
+ *
+ * Belangrijk:
+ * - De browser stopt zelf na een stilte; wij starten dan automatisch opnieuw.
+ * - Als Boekoe praat, pauzeren we het luisteren. Anders hoort de app Boekoe in plaats van het kind.
+ * - Alles wat definitief gehoord is bewaren we, zodat herstarten niets kwijtraakt.
+ */
+
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function isSupported() {
+  return !!Recognition && window.isSecureContext;
+}
+
+class Listener {
+  /**
+   * @param {object} opts
+   * @param {(final:string[], interim:string[]) => void} opts.onWords   definitief gehoorde woorden + voorlopige gok
+   * @param {(state:string, detail?:string) => void} [opts.onState]  "listening" | "paused" | "stopped" | "error"
+   */
+  constructor({ onWords, onState = () => {} }) {
+    this.onWords = onWords;
+    this.onState = onState;
+    this.finalWords = [];     // definitief gehoord, over alle sessies heen
+    this.interimWords = [];   // voorlopig (kan nog veranderen)
+    this.active = false;      // wil de app dat er geluisterd wordt?
+    this.paused = false;      // tijdelijk stil omdat Boekoe praat
+    this.rec = null;
+    this.restartTimer = null;
+  }
+
+  start() {
+    if (!isSupported()) { this.onState("error", "unsupported"); return; }
+    this.active = true;
+    this.paused = false;
+    this.finalWords = [];
+    this.interimWords = [];
+    this._open();
+  }
+
+  /** Verder luisteren na een onderbreking, zonder wat al gehoord is te wissen. */
+  continue() {
+    this.active = true;
+    this.paused = false;
+    this._open();
+  }
+
+  /** Tijdelijk niet luisteren (bijv. terwijl Boekoe praat). */
+  pause() {
+    if (!this.active || this.paused) return;
+    this.paused = true;
+    this.interimWords = [];          // wat half gehoord was, telt niet
+    this._close();
+    this.onState("paused");
+  }
+
+  resume() {
+    if (!this.active || !this.paused) return;
+    this.paused = false;
+    this._open();
+  }
+
+  stop() {
+    this.active = false;
+    this.paused = false;
+    clearTimeout(this.restartTimer);
+    this._close();
+    this.onState("stopped");
+  }
+
+  words() { return [...this.finalWords, ...this.interimWords]; }
+
+  _open() {
+    clearTimeout(this.restartTimer);
+    if (this.rec) return;
+    const rec = new Recognition();
+    rec.lang = "nl-NL";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+
+    rec.onstart = () => this.onState("listening");
+
+    rec.onresult = (ev) => {
+      if (this.paused) return;
+      let interim = [];
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        const words = res[0].transcript.trim().split(/\s+/).filter(Boolean);
+        if (res.isFinal) this.finalWords.push(...words);
+        else interim.push(...words);
+      }
+      this.interimWords = interim;
+      this.onWords([...this.finalWords], [...this.interimWords]);
+    };
+
+    rec.onerror = (ev) => {
+      // "no-speech" en "aborted" zijn normaal; die lossen we op met herstarten.
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+        this.active = false;
+        this.onState("error", "not-allowed");
+      } else if (ev.error === "language-not-supported") {
+        this.active = false;
+        this.onState("error", "language");
+      } else if (ev.error === "network") {
+        this.onState("error", "network");
+      }
+    };
+
+    rec.onend = () => {
+      this.rec = null;
+      // Voorlopige woorden van een afgebroken sessie toch meenemen (Safari maakt ze soms niet definitief).
+      if (this.interimWords.length && !this.paused) { this.finalWords.push(...this.interimWords); this.interimWords = []; }
+      if (this.active && !this.paused) this.restartTimer = setTimeout(() => this._open(), 150);
+    };
+
+    this.rec = rec;
+    try { rec.start(); } catch (e) { this.rec = null; this.restartTimer = setTimeout(() => this._open(), 300); }
+  }
+
+  _close() {
+    const rec = this.rec;
+    this.rec = null;
+    if (rec) { rec.onend = null; rec.onresult = null; try { rec.abort(); } catch (e) {} }
+  }
+}
+
+/* ===================== Boekoe: zinnen, gezichtjes en stem ===================== */
+/* Alle zinnen van Boekoe. Geluidsbestanden staan in de map audio/boekoe/ naast dit bestand.
+   Geen geluidsbestand? Dan laat Boekoe alleen de tekst zien. */
+const LINES = {"moments":[
+{"id":"welcome_first","priority":3,"lines":[
+{"id":"welcome_first-1","text":"Halloooo! Ik ben Boekoe! Hihi, ik ben zó blij dat je er bent!","emotion":"blij","file":"welcome_first-1.webm"}]},
+{"id":"welcome_back","priority":2,"lines":[
+{"id":"welcome_back-1","text":"Hé, jij weer! Joepie! Ik heb op je gewacht!","emotion":"blij","file":"welcome_back-1.webm"},
+{"id":"welcome_back-2","text":"Halloooo! Klaar voor een avontuur? Hihi, ik wel!","emotion":"ondeugend","file":"welcome_back-2.webm"}]},
+{"id":"greet_morning","priority":2,"lines":[
+{"id":"greet_morning-1","text":"Goeiemorgen! Ik heb gedroomd van letters. Ze kietelden! Hihi!","emotion":"ondeugend","file":"greet_morning-1.webm"}]},
+{"id":"greet_afternoon","priority":2,"lines":[
+{"id":"greet_afternoon-1","text":"Hoi hoi! Zullen we samen een stukje lezen?","emotion":"blij","file":"greet_afternoon-1.webm"}]},
+{"id":"greet_evening","priority":2,"lines":[
+{"id":"greet_evening-1","text":"Goeienavond! Nog eentje voor het slapengaan? Lekker knus!","emotion":"rustig","file":"greet_evening-1.webm"}]},
+{"id":"instr_photo","priority":1,"lines":[
+{"id":"instr_photo-1","text":"Pak je boek! Maak een foto van de bladzijde. Ik ben zó benieuwd!","emotion":"nieuwsgierig","file":"instr_photo-1.webm"}]},
+{"id":"instr_read","priority":3,"lines":[
+{"id":"instr_read-1","text":"Lees maar hardop. Mijn bladzij-oren staan aan! Hihi.","emotion":"ondeugend","file":"instr_read-1.webm"},
+{"id":"instr_read-2","text":"Kom op, we gaan op ontdekking!","emotion":"nieuwsgierig","file":"instr_read-2.webm"}]},
+{"id":"tap_boekoe","priority":1,"lines":[
+{"id":"tap_boekoe-1","text":"Hihi, dat kietelt!","emotion":"ondeugend","file":"tap_boekoe-1.webm"},
+{"id":"tap_boekoe-2","text":"Hé! Niet aan mijn oren, daar staan verhalen op!","emotion":"ondeugend","file":"tap_boekoe-2.webm"},
+{"id":"tap_boekoe-3","text":"Boe! Hihi, schrok je?","emotion":"verrast","file":"tap_boekoe-3.webm"}]},
+{"id":"stuck","priority":3,"lines":[
+{"id":"stuck-1","text":"Hmm, lastig woord, hè? We doen hem in stukjes:","emotion":"rustig","file":"stuck-1.webm"},
+{"id":"stuck-2","text":"Geeft niks hoor! Die is ook echt moeilijk. Kijk:","emotion":"bemoedigend","file":"stuck-2.webm"}]},
+{"id":"word_tap","priority":1,"lines":[
+{"id":"word_tap-1","text":"Ooh, dat woord! In stukjes is het een makkie:","emotion":"nieuwsgierig","file":"word_tap-1.webm"}]},
+{"id":"compliment","priority":1,"lines":[
+{"id":"compliment-1","text":"Wauw! Jij wordt steeds slimmer!","emotion":"blij","file":"compliment-1.webm"},
+{"id":"compliment-2","text":"Joehoe! Wat lees jij goed!","emotion":"trots","file":"compliment-2.webm"},
+{"id":"compliment-3","text":"Wow, jij leest supervlot!","emotion":"verrast","file":"compliment-3.webm"},
+{"id":"compliment-4","text":"Ga zo door, kanjer!","emotion":"blij","file":"compliment-4.webm"}]},
+{"id":"gotit","priority":2,"lines":[
+{"id":"gotit-1","text":"Yes! Die was moeilijk en jij deed het!","emotion":"trots","file":"gotit-1.webm"},
+{"id":"gotit-2","text":"Goed gezien, speurneus!","emotion":"blij","file":"gotit-2.webm"}]},
+{"id":"misread","priority":3,"lines":[
+{"id":"misread-1","text":"Oepsie! Nog een keertje? Dat lukt vast!","emotion":"bemoedigend","file":"misread-1.webm"},
+{"id":"misread-2","text":"Bijna! Kijk eens naar het eind van het woord.","emotion":"rustig","file":"misread-2.webm"}]},
+{"id":"quiz_wrong","priority":2,"lines":[
+{"id":"quiz_wrong-1","text":"Hmm, bijna! Kijk nog even in het verhaal. Jij kunt dit!","emotion":"bemoedigend","file":"quiz_wrong-1.webm"}]},
+{"id":"page_done","priority":3,"lines":[
+{"id":"page_done-1","text":"Joehoeee! De hele bladzijde! Wat knap!","emotion":"trots","file":"page_done-1.webm"},
+{"id":"page_done-2","text":"Helemaal uit! Ik ben echt trots op jou!","emotion":"trots","file":"page_done-2.webm"}]},
+{"id":"quiz_right","priority":2,"lines":[
+{"id":"quiz_right-1","text":"Ja! Goed onthouden! Jij hebt super opgelet!","emotion":"verrast","file":"quiz_right-1.webm"}]},
+{"id":"sticker","priority":1,"lines":[
+{"id":"sticker-1","text":"Kijk, een gouden ster! Die is helemaal voor jou!","emotion":"trots","file":"sticker-1.webm"}]},
+{"id":"story","priority":2,"lines":[
+{"id":"story-1","text":"Pssst... zal ik je een geheimpje vertellen? Ik eet geen koekjes. Ik eet letters! Hihi!","emotion":"ondeugend","file":"story-1.webm"},
+{"id":"story-2","text":"Wist je dat mijn oren bladzijdes zijn? Daar bewaar ik al mijn verhalen!","emotion":"nieuwsgierig","file":"story-2.webm"},
+{"id":"story-3","text":"Weet je wat mijn lievelingsletter is? De B! Van Boekoe! Hihi.","emotion":"ondeugend","file":"story-3.webm"}]}]};
+
+/**
+ * boekoe.js — Boekoe zelf: zijn gezichtjes, zijn stem en wat hij wanneer zegt.
+ *
+ * - Alle zinnen staan in audio/boekoe/lines.json (met het bijbehorende geluidsbestand).
+ * - Er speelt altijd maar één geluid tegelijk; belangrijke zinnen gaan voor.
+ * - Zonder geluidsbestand (of met geluid uit) laat Boekoe alleen de tekst zien. Nooit een computerstem.
+ */
+
+/* ---------- Gezichtjes per emotie ---------- */
+const eyesNormal=(dx=0,dy=0)=>`<circle cx="62" cy="86" r="14" fill="#fff"/><circle cx="98" cy="86" r="14" fill="#fff"/>
+  <g class="eye"><circle cx="${64+dx}" cy="${88+dy}" r="7" fill="#2B2A33"/><circle cx="${66.5+dx}" cy="${85.5+dy}" r="2.4" fill="#fff"/></g>
+  <g class="eye"><circle cx="${96+dx}" cy="${88+dy}" r="7" fill="#2B2A33"/><circle cx="${98.5+dx}" cy="${85.5+dy}" r="2.4" fill="#fff"/></g>`;
+const eyesHappy=`<path d="M50 90 Q62 76 74 90" stroke="#2B2A33" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M86 90 Q98 76 110 90" stroke="#2B2A33" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+const eyesWink=`<circle cx="62" cy="86" r="14" fill="#fff"/><g class="eye"><circle cx="64" cy="88" r="7" fill="#2B2A33"/><circle cx="66.5" cy="85.5" r="2.4" fill="#fff"/></g>
+  <path d="M86 90 Q98 80 110 90" stroke="#2B2A33" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+const eyesWide=`<circle cx="62" cy="85" r="16" fill="#fff"/><circle cx="98" cy="85" r="16" fill="#fff"/>
+  <g class="eye"><circle cx="62" cy="86" r="5.5" fill="#2B2A33"/><circle cx="64" cy="84" r="1.8" fill="#fff"/></g>
+  <g class="eye"><circle cx="98" cy="86" r="5.5" fill="#2B2A33"/><circle cx="100" cy="84" r="1.8" fill="#fff"/></g>`;
+const M = {
+  smile:`<path d="M71 104 Q80 113 89 104" stroke="#2B2A33" stroke-width="3.5" fill="none" stroke-linecap="round"/>`,
+  big:`<path d="M66 102 Q80 124 94 102 Z" fill="#7A2E2E"/><path d="M73 112 Q80 118 87 112 Q80 109 73 112Z" fill="#FF7A8A"/>`,
+  o:`<ellipse cx="80" cy="109" rx="6.5" ry="8.5" fill="#7A2E2E"/>`,
+  smallO:`<ellipse cx="82" cy="108" rx="4" ry="5" fill="#7A2E2E"/>`,
+  smirk:`<path d="M69 106 Q82 111 93 100" stroke="#2B2A33" stroke-width="3.5" fill="none" stroke-linecap="round"/><path d="M84 107 Q88 113 91 106" fill="#FF7A8A"/>`,
+  soft:`<path d="M73 105 Q80 110 87 105" stroke="#2B2A33" stroke-width="3.2" fill="none" stroke-linecap="round"/>`,
+};
+const B = {
+  curious:`<path d="M86 66 Q98 57 111 63" stroke="#2B2A33" stroke-width="4" fill="none" stroke-linecap="round"/>`,
+  up:`<path d="M49 64 Q62 56 75 63" stroke="#2B2A33" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M85 63 Q98 56 111 64" stroke="#2B2A33" stroke-width="4" fill="none" stroke-linecap="round"/>`,
+  soft:`<path d="M51 70 Q61 65 73 68" stroke="#2B2A33" stroke-width="3.5" fill="none" stroke-linecap="round"/><path d="M87 68 Q99 65 109 70" stroke="#2B2A33" stroke-width="3.5" fill="none" stroke-linecap="round"/>`,
+};
+const FACES = {
+  blij:        {eyes:eyesNormal(),      mouth:M.big},
+  nieuwsgierig:{eyes:eyesNormal(3,-3),  mouth:M.smallO, brows:B.curious},
+  verrast:     {eyes:eyesWide,          mouth:M.o,      brows:B.up},
+  trots:       {eyes:eyesHappy,         mouth:M.big,    cheeks:.75},
+  rustig:      {eyes:eyesNormal(0,1),   mouth:M.soft},
+  ondeugend:   {eyes:eyesWink,          mouth:M.smirk},
+  bemoedigend: {eyes:eyesNormal(),      mouth:M.smile,  brows:B.soft},
+};
+function boekoeSVG(em="blij", extraClass=""){
+  const f=FACES[em]||FACES.blij;
+  return `<svg viewBox="0 0 160 160" class="bk ${extraClass}" aria-hidden="true">
+    <ellipse cx="80" cy="152" rx="44" ry="6" fill="#E4D8C4"/>
+    <g class="body-g">
+      <path class="ear-l" d="M48 56 Q30 18 14 32 Q20 62 52 70Z" fill="#fff" stroke="#6A4CE0" stroke-width="4" stroke-linejoin="round"/>
+      <path class="ear-r" d="M112 56 Q130 18 146 32 Q140 62 108 70Z" fill="#fff" stroke="#6A4CE0" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M26 38 L40 56 M22 48 L36 64 M134 38 L120 56 M138 48 L124 64" stroke="#D3C8FF" stroke-width="3" stroke-linecap="round"/>
+      <path d="M76 48 L76 26 L84 26 L84 48 L80 44Z" fill="#6A4CE0"/>
+      <ellipse cx="80" cy="98" rx="52" ry="50" fill="#FF8A5B"/>
+      <ellipse cx="80" cy="114" rx="30" ry="27" fill="#FFD9C7"/>
+      ${f.eyes}${f.brows||""}
+      <circle cx="48" cy="104" r="6" fill="#FF5C7A" opacity="${f.cheeks||.45}"/><circle cx="112" cy="104" r="6" fill="#FF5C7A" opacity="${f.cheeks||.45}"/>
+      <g class="mouth">${f.mouth}</g>
+      <ellipse cx="62" cy="146" rx="13" ry="6" fill="#E8683B"/><ellipse cx="98" cy="146" rx="13" ry="6" fill="#E8683B"/>
+    </g></svg>`;
+}
+
+/* ---------- Zinnen laden ---------- */
+const MOMENTS = {};          // id -> {priority, lines:[...]}
+const lastPicked = {};
+async function loadLines() {
+  for (const m of LINES.moments) MOMENTS[m.id] = m;
+  Player.prefetch(Object.values(MOMENTS).flatMap(m => m.lines));
+  return LINES;
+}
+function choose(momentId) {
+  const m = MOMENTS[momentId]; if (!m || !m.lines.length) return null;
+  const withAudio = m.lines.filter(l => l.file);
+  let pool = withAudio.length ? withAudio : m.lines;
+  if (pool.length > 1) pool = pool.filter(l => l.id !== lastPicked[momentId]);
+  const line = pool[Math.floor(Math.random() * pool.length)];
+  lastPicked[momentId] = line.id;
+  return line;
+}
+
+/* ---------- Geluid ---------- */
+// Een heel kort stil geluidje, nodig om geluid op de iPhone te "ontgrendelen"
+const SILENT = (() => {
+  const n = 400, b = new Uint8Array(44 + n), v = new DataView(b.buffer);
+  const w = (o, t) => [...t].forEach((c, i) => b[o + i] = c.charCodeAt(0));
+  w(0, "RIFF"); v.setUint32(4, 36 + n, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, n, true); b.fill(128, 44);
+  return URL.createObjectURL(new Blob([b], { type: "audio/wav" }));
+})();
+const Sound = {
+  on: (() => { try { return JSON.parse(localStorage.getItem("boekoe_sound") ?? "true"); } catch (e) { return true; } })(),
+  set(on) { this.on = on; try { localStorage.setItem("boekoe_sound", JSON.stringify(on)); } catch (e) {} if (!on) Player.stop(); },
+};
+
+const Player = {
+  el: new Audio(), playing: false, prio: 0, onEnd: null, cache: {}, unlocked: false, listeners: new Set(),
+  init() {
+    this.el.preload = "auto"; this.el.setAttribute("playsinline", "");
+    this.el.onended = () => this.finish(true);
+    this.el.onerror = () => this.finish(false);
+    // iPhone: geluid 'ontgrendelen' bij de eerste aanraking
+    const unlock = () => { if (this.unlocked) return; this.unlocked = true;
+      try { this.el.src = SILENT; const p = this.el.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} };
+    document.addEventListener("pointerdown", unlock, { once: true, capture: true });
+    document.addEventListener("keydown", unlock, { once: true, capture: true });
+  },
+  /** Laat anderen (de microfoon) weten wanneer Boekoe begint en stopt met praten. */
+  onTalk(fn) { this.listeners.add(fn); },
+  emit(talking) { this.listeners.forEach(f => { try { f(talking); } catch (e) {} }); },
+  src(line) { return line && line.file ? "audio/boekoe/" + line.file : null; },
+  prefetch(lines) {
+    if (location.protocol === "file:") return;   // los geopend bestand: geen vooraf laden nodig
+    lines.forEach(l => { const s = this.src(l); if (!s || this.cache[s]) return; this.cache[s] = "pending";
+      fetch(s).then(r => r.ok ? r.blob() : Promise.reject()).then(b => { this.cache[s] = URL.createObjectURL(b); }).catch(() => { delete this.cache[s]; }); });
+  },
+  play(src, prio, { onStart, onEnd } = {}) {
+    this.stop();
+    this.prio = prio; this.playing = true; this.onEnd = onEnd || null;
+    this.emit(true);
+    const real = (this.cache[src] && this.cache[src] !== "pending") ? this.cache[src] : src;
+    try { this.el.src = real; this.el.currentTime = 0; const p = this.el.play(); if (onStart) onStart(); if (p && p.catch) p.catch(() => this.finish(false)); }
+    catch (e) { this.finish(false); }
+  },
+  finish(ok) { if (!this.playing) return; this.playing = false; this.prio = 0; const f = this.onEnd; this.onEnd = null; if (f) f(ok); this.emit(false); },
+  stop() { try { this.el.pause(); } catch (e) {} this.finish(false); },
+};
+Player.init();
+
+/* ---------- Boekoe praat ---------- */
+const lastSaid = {}, hideTimers = {};
+let vars = {};
+function setVars(v) { vars = { ...vars, ...v }; }
+const fill = t => t.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+
+/**
+ * Laat Boekoe iets zeggen op een moment uit lines.json.
+ * @param {string} momentId  bijv. "stuck", "compliment"
+ * @param {object} o
+ * @param {HTMLElement} o.el     de spraakballon (met .say-text en optioneel .say-face)
+ * @param {HTMLElement} [o.face] waar het gezicht getekend wordt (standaard .say-face in de ballon)
+ * @param {string} [o.mood]      "good" | "tip" | "fixit" (kleur van de ballon)
+ * @param {string} [o.extra]     extra tekst achter de zin (bijv. lettergrepen)
+ * @param {number} [o.hideAfter] ballon na zoveel ms verbergen
+ * @returns {Promise<void>} klaar als Boekoe uitgepraat is
+ */
+function say(momentId, o = {}) {
+  return new Promise(resolve => {
+    const m = MOMENTS[momentId]; if (!m || !o.el) return resolve();
+    const prio = m.priority || 1;
+    if (Player.playing && Player.prio > prio) return resolve();   // iets belangrijkers is bezig
+    const line = o.line || choose(momentId); if (!line) return resolve();
+    const key = o.el.id || "x";
+    lastSaid[key] = { momentId, o: { ...o, line } };
+    clearTimeout(hideTimers[key]);
+
+    const text = fill(line.text) + (o.extra ? " " + o.extra : "");
+    o.el.querySelector(".say-text").textContent = text;
+    const face = o.face || o.el.querySelector(".say-face");
+    if (face) face.innerHTML = boekoeSVG(line.emotion, "pop" + (line.emotion === "ondeugend" ? " ears-wiggle" : ""));
+    o.el.classList.remove("hidden", "show", "good", "tip", "fixit");
+    void o.el.offsetWidth;
+    o.el.classList.add("show"); if (o.mood) o.el.classList.add(o.mood);
+    const svg = face && face.querySelector("svg");
+
+    const done = () => {
+      if (o.hideAfter) hideTimers[key] = setTimeout(() => o.el.classList.add("hidden"), o.hideAfter);
+      resolve();
+    };
+    const src = Sound.on ? Player.src(line) : null;
+    if (src) {
+      Player.play(src, prio, { onStart: () => svg && svg.classList.add("talking"),
+                               onEnd: () => { svg && svg.classList.remove("talking"); done(); } });
+    } else {
+      if (Player.playing) Player.stop();
+      setTimeout(done, 700 + text.length * 45);
+    }
+  });
+}
+function replay(el) { const l = lastSaid[el.id || "x"]; if (l) { Player.stop(); return say(l.momentId, l.o); } }
+
+/* ===================== voorbeeldverhaaltjes ===================== */
+/**
+ * stories.js — voorbeeldbladzijdes om mee te oefenen (zonder foto).
+ * Nieuwe toevoegen? Kopieer een blok en pas het aan.
+ *  - hard:     woorden die we extra aandacht geven (lettergrepen in "syllables")
+ *  - quiz:     één vraag na het lezen; "answer" = nummer van het goede antwoord (begint bij 0)
+ */
+const STORIES = [
+  {
+    id: "bas-muts",
+    title: "Bas en de rode muts",
+    level: "groep 3-4",
+    text: "Bas de beer zoekt zijn rode muts. Hij kijkt onder het bed. Daar ligt een boek, maar geen muts. Dan hoort hij een geluid in de tuin. De wind blaast de muts hoog in de boom! Bas klimt voorzichtig omhoog. Hebbes!",
+    syllables: { geluid: ["ge", "luid"], voorzichtig: ["voor", "zich", "tig"], blaast: ["bl", "aa", "st"] },
+    quiz: { question: "Waar was de muts van Bas?", options: ["Onder het bed", "Hoog in de boom", "In de schooltas"], answer: 1 },
+  },
+  {
+    id: "pip-vlinder",
+    title: "Pip en de vlinder",
+    level: "groep 3-4",
+    text: "Pip de kat ligt in de zon. Er vliegt een gele vlinder langs. Pip springt op en rent erachteraan. De vlinder gaat over de schutting. Pip springt ook. Plons! Daar is de vijver. Pip is nat, maar de vlinder lacht.",
+    syllables: { vlinder: ["vlin", "der"], schutting: ["schut", "ting"], erachteraan: ["er", "ach", "ter", "aan"] },
+    quiz: { question: "Welke kleur had de vlinder?", options: ["Geel", "Blauw", "Rood"], answer: 0 },
+  },
+  {
+    id: "noor-raket",
+    title: "Noor bouwt een raket",
+    level: "groep 4-5",
+    text: "Noor heeft een grote doos gevonden. Ze plakt er een punt op en tekent ramen aan de zijkant. Nu is het een raket! Noor gaat erin zitten en telt af: drie, twee, een. Ze sluit haar ogen en vliegt in gedachten naar de maan. Daar zwaait een vriendelijk mannetje naar haar.",
+    syllables: { gevonden: ["ge", "von", "den"], zijkant: ["zij", "kant"], gedachten: ["ge", "dach", "ten"], vriendelijk: ["vrien", "de", "lijk"] },
+    quiz: { question: "Waar vliegt Noor naartoe?", options: ["Naar de zon", "Naar de maan", "Naar oma"], answer: 1 },
+  },
+];
+
+/* ===================== foto van de bladzijde (werkt pas als de app online staat) ===================== */
+/**
+ * ocr.js — stuurt een foto naar onze serverfunctie (/api/ocr) en krijgt de tekst terug.
+ */
+
+/** Verklein de foto (sneller en goedkoper) en zet om naar JPEG. Werkt ook met iPhone-foto's. */
+async function toJpegBase64(file, max = 1600) {
+  let blob = file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    blob = await new Promise(r => c.toBlob(b => r(b || file), "image/jpeg", 0.88));
+  } catch (e) { /* lukt verkleinen niet, dan sturen we het origineel */ }
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = ""; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return { image: btoa(bin), mediaType: blob.type === "image/png" ? "image/png" : "image/jpeg" };
+}
+
+/**
+ * @returns {Promise<{text:string, syllables:object, quiz:object|null}>}
+ * @throws {{code:string}}  "not_configured" | "no_text" | "offline" | "failed"
+ */
+async function readPhoto(file) {
+  if (location.protocol === "file:") throw { code: "not_configured" };   // werkt alleen online
+  const payload = await toJpegBase64(file);
+  let res;
+  try { res = await fetch("/api/ocr", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }); }
+  catch (e) { throw { code: "offline" }; }
+  if (res.status === 404 || res.status === 501) throw { code: "not_configured" };
+  if (!res.ok) throw { code: "failed" };
+  const r = await res.json();
+
+  const text = String(r.text || "").replace(/\s+/g, " ").trim().slice(0, 1500);
+  if (text.split(" ").length < 3) throw { code: "no_text" };
+  const words = new Set(text.toLowerCase().split(" ").map(w => w.replace(/[^\p{L}]/gu, "")));
+  const syllables = {};
+  (Array.isArray(r.hard) ? r.hard : []).slice(0, 3).forEach(h => {
+    const w = String(h?.word || "").toLowerCase().replace(/[^\p{L}]/gu, "");
+    if (w && words.has(w) && Array.isArray(h.syllables)) syllables[w] = h.syllables.map(x => String(x).slice(0, 20)).slice(0, 8);
+  });
+  const options = (Array.isArray(r.options) ? r.options : []).map(x => String(x).slice(0, 80)).slice(0, 4);
+  const answer = Number.isInteger(r.answer) && r.answer >= 0 && r.answer < options.length ? r.answer : -1;
+  const quiz = r.question && options.length >= 2 && answer >= 0 ? { question: String(r.question).slice(0, 160), options, answer } : null;
+  return { text, syllables, quiz };
+}
+
+/* ===================== de app ===================== */
+/**
+ * app.js — de schermen van Leesmaatje en hoe ze samenwerken.
+ *
+ *   boekoe.js    Boekoe's gezicht, stem en zinnen
+ *   listener.js  de microfoon / spraakherkenning
+ *   aligner.js   vergelijkt wat het kind zegt met de tekst
+ *   ocr.js       foto van de bladzijde -> tekst (via /api/ocr)
+ *   stories.js   voorbeeldverhaaltjes
+ */
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+
+/* ================= Instellingen & voortgang (op dit toestel) ================= */
+let profile = LS.get("lm_profile", null);             // {name, groep}
+const sessions = LS.get("lm_sessions", []);           // [{date, title, wpm, acc, practice:[]}]
+const childName = () => (profile && profile.name) || "jij";
+
+/* ================= Navigatie ================= */
+const screens = ["s-onboard", "s-home", "s-stories", "s-read", "s-done", "s-parent"];
+let homeIdle = null;
+function go(id) {
+  screens.forEach(s => $(s).classList.toggle("active", s === id));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on",
+    t.dataset.go === id || (["s-read", "s-done", "s-stories"].includes(id) && t.dataset.go === "s-home")));
+  $("who").textContent = ["s-parent", "s-onboard"].includes(id) ? "Ouder" : "Kind";
+  clearTimeout(homeIdle);
+  if (id !== "s-read") stopReading(false);
+  if (["s-parent", "s-onboard"].includes(id)) Player.stop();
+  if (id === "s-parent") renderParent();
+  if (id === "s-home") enterHome();
+  if (id === "s-stories") renderStories();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => go(t.dataset.go));
+$("who").onclick = () => go($("who").textContent === "Kind" ? "s-parent" : "s-home");
+$("soundBtn").onclick = () => { Sound.set(!Sound.on); $("soundBtn").textContent = Sound.on ? "🔊" : "🔇"; };
+$("soundBtn").textContent = Sound.on ? "🔊" : "🔇";
+["sayHome", "sayRead", "sayDone"].forEach(id => $(id).querySelector(".replay").onclick = () => replay($(id)));
+
+/* ================= 1. Onboarding ================= */
+const ok1 = $("ok1"), ok2 = $("ok2"), startBtn = $("startBtn");
+if (profile) { $("naam").value = profile.name; $("groep").value = profile.groep; ok1.checked = ok2.checked = true; startBtn.disabled = false; }
+[ok1, ok2].forEach(c => c.onchange = () => startBtn.disabled = !(ok1.checked && ok2.checked));
+startBtn.onclick = () => {
+  const p = { name: $("naam").value.trim() || "jij", groep: +$("groep").value };
+  LS.set("lm_profile", p); profile = p;
+  setVars({ naam: p.name });
+  location.hash = ""; go("s-home");
+};
+
+/* ================= 2. Startscherm ================= */
+function enterHome() {
+  const today = new Date().toDateString(), h = new Date().getHours();
+  let moment;
+  if (!LS.get("lm_met", false)) { moment = "welcome_first"; LS.set("lm_met", true); LS.set("lm_day", today); }
+  else if (LS.get("lm_day", "") !== today) { moment = h < 12 ? "greet_morning" : h < 18 ? "greet_afternoon" : "greet_evening"; LS.set("lm_day", today); }
+  else moment = "welcome_back";
+  setTimeout(() => say(moment, { el: $("sayHome"), face: $("mascotBtn") }), 250);
+  homeIdle = setTimeout(() => { if ($("s-home").classList.contains("active")) say("instr_photo", { el: $("sayHome"), face: $("mascotBtn") }); }, 12000);
+  // sterren: leesbeurten deze week
+  const weekAgo = Date.now() - 7 * 864e5, n = sessions.filter(s => s.date > weekAgo).length, shown = Math.min(n, 5);
+  $("stars").innerHTML = "⭐".repeat(shown) + `<span style="opacity:.25">${"⭐".repeat(5 - shown)}</span>`;
+  $("starsTxt").textContent = n ? `${n} keer gelezen deze week` : "Nog niet gelezen deze week";
+}
+$("mascotBtn").onclick = () => { clearTimeout(homeIdle); say("tap_boekoe", { el: $("sayHome"), face: $("mascotBtn") }); };
+$("psstBtn").onclick = () => { clearTimeout(homeIdle); say("story", { el: $("sayHome"), face: $("mascotBtn") }); };
+$("chooseStory").onclick = () => go("s-stories");
+
+/* ================= 2b. Verhaaltjes ================= */
+function renderStories() {
+  const list = $("storyList"); list.innerHTML = "";
+  STORIES.forEach(s => {
+    const b = document.createElement("button"); b.className = "opt";
+    b.innerHTML = `${esc(s.title)}<br><span class="small muted">${esc(s.level)}</span>`;
+    b.onclick = () => startBook({ title: s.title, text: s.text, syllables: s.syllables, quiz: s.quiz });
+    list.append(b);
+  });
+}
+$("useOwnText").onclick = () => {
+  const t = $("ownText").value.replace(/\s+/g, " ").trim();
+  if (t.split(" ").length >= 3) startBook({ title: "Eigen tekst", text: t.slice(0, 1500), syllables: {}, quiz: null });
+};
+
+/* ================= Foto van de bladzijde ================= */
+function showOcr(kind, msg, sub) {
+  $("ocrBox").style.display = "flex"; $("page").style.display = "none"; $("readBtn").parentElement.style.display = "none";
+  $("ocrFace").innerHTML = boekoeSVG(kind === "busy" ? "nieuwsgierig" : "bemoedigend");
+  $("ocrMsg").textContent = msg; $("ocrSub").textContent = sub || "";
+  $("ocrBtns").style.display = kind === "busy" ? "none" : "flex";
+}
+function hideOcr() { $("ocrBox").style.display = "none"; $("page").style.display = ""; $("readBtn").parentElement.style.display = ""; }
+async function onPhoto(file) {
+  const img = $("prev"); img.src = URL.createObjectURL(file); img.style.display = "block";
+  go("s-read"); $("sayRead").classList.add("hidden");
+  showOcr("busy", "Boekoe leest je bladzijde…", "Even geduld, dit duurt een paar seconden.");
+  try {
+    const book = await readPhoto(file);
+    hideOcr(); startBook({ title: "Jouw bladzijde", ...book }, true);
+  } catch (e) {
+    const c = e && e.code;
+    const [msg, sub] =
+      c === "no_text" ? ["Hmm, ik zie geen tekst op deze foto.", "Maak een foto van dichtbij, recht van boven en met goed licht."] :
+      c === "not_configured" ? ["Foto's lezen staat nog niet aan.", "De app draait nog zonder server of zonder API-sleutel (zie README). Kies zolang een verhaaltje."] :
+      c === "offline" ? ["Geen internet?", "Controleer je verbinding en probeer het opnieuw."] :
+      ["Oeps, het lezen van de foto lukte niet.", "Probeer een nieuwe foto, of kies een verhaaltje."];
+    showOcr("error", msg, sub);
+  }
+}
+$("photo").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) onPhoto(f); };
+$("photo2").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) onPhoto(f); };
+$("ocrStories").onclick = () => go("s-stories");
+
+/* ================= 3. Lezen (echt meeluisteren) ================= */
+let BOOK = null;
+const R = {                       // alles van de huidige leesbeurt
+  words: [], expected: [], statuses: [], pos: 0, listener: null, reading: false,
+  startedAt: 0, lastProgress: 0, stuckAt: -1, misreadAt: -1, helped: new Set(), streak: 0, timer: null,
+  lastHeard: 0, lastTalk: 0, misreadTimer: null, ready: false, micLost: false, tried: false, heardLen: 0,
+};
+// Hoe geduldig Boekoe is (in milliseconden). Hoger = Boekoe praat minder snel.
+const PATIENCE = {
+  stuckAfter: 6000,         // niets gezegd: zo lang wachten voordat Boekoe helpt
+  stuckAfterTry: 2500,      // wél geprobeerd (gehakkeld) en dan stil: sneller helpen
+  stuckAfterMisread: 8000,  // na een verbetering: nog even de kans geven
+  quietBeforeHelp: 2500,    // het kind moet ook echt even stil zijn
+  misreadDelay: 1500,       // eerst zelf laten verbeteren voordat Boekoe iets zegt
+  misreadQuiet: 2000,       // en alleen als het kind even stil is (niet midden in het lezen)
+  sentencesPerCompliment: 4,
+  complimentGap: 30000,     // minimaal zoveel tijd sinds Boekoe iets zei, voor een compliment
+};
+
+function startBook(book, keepPhoto = false) {
+  BOOK = book;
+  if (!keepPhoto) $("prev").style.display = "none";
+  hideOcr();
+  $("readTitle").textContent = book.title || "Lees maar hardop!";
+  const page = $("page"); page.innerHTML = "";
+  R.words = tokenize(book.text).map(raw => {
+    const span = document.createElement("span"); span.className = "w"; span.textContent = raw;
+    const clean = raw.toLowerCase().replace(/[^\p{L}]/gu, "");
+    span.onclick = () => { if (R.reading) return; span.classList.add("now"); setTimeout(() => span.classList.remove("now"), 900);
+      say("word_tap", { el: $("sayRead"), mood: "tip", extra: syllables(clean, BOOK.syllables).join(" · "), hideAfter: 2500 }); };
+    page.append(span, document.createTextNode(" "));
+    return { raw, clean, el: span };
+  });
+  R.expected = R.words.map(w => normalize(w.raw));
+  $("bar").style.width = "0"; $("sayRead").classList.add("hidden"); $("micErr").style.display = "none";
+  $("heardTxt").textContent = "…";
+  const b = $("readBtn"); b.disabled = false; b.textContent = "🎤 Ik ga lezen"; $("stopBtn").style.display = "none";
+  go("s-read");
+}
+
+$("readBtn").onclick = () => {
+  if (R.reading && R.micLost && R.listener) {         // microfoon was weggevallen: verder waar we waren
+    R.micLost = false; $("micErr").style.display = "none";
+    R.listener.continue();
+    $("readBtn").disabled = true; $("readBtn").textContent = "👂 Lees maar, ik luister!";
+    R.lastProgress = Date.now(); R.lastHeard = Date.now();
+    return;
+  }
+  if (R.reading) return;
+  if (!isSupported()) {
+    showMicError("Meeluisteren werkt niet in deze browser. Gebruik Chrome (Android of computer) of Safari op iPhone/iPad met Siri en Dicteren aan.");
+    return;
+  }
+  Object.assign(R, { statuses: R.expected.map(() => "pending"), pos: 0, startedAt: 0, lastProgress: Date.now(),
+                     stuckAt: -1, misreadAt: -1, helped: new Set(), streak: 0, reading: true,
+                     lastHeard: Date.now(), lastTalk: Date.now(), ready: false, micLost: false, tried: false, heardLen: 0 });
+  R.words.forEach(w => w.el.className = "w");
+  $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
+
+  R.listener = new Listener({ onWords: onHeard, onState: onMicState });
+  R.listener.start();                                   // binnen de tik starten: dan mag de microfoon aan
+  // Eerst Boekoe laten uitpraten, dán pas het kind laten beginnen (anders mist hij het begin)
+  say("instr_read", { el: $("sayRead"), hideAfter: 1500 }).then(() => {
+    if (!R.reading) return;
+    R.ready = true; R.lastProgress = Date.now(); R.lastHeard = Date.now();
+    if (R.words[R.pos]) R.words[R.pos].el.classList.add("now");
+    $("readBtn").textContent = "👂 Lees maar, ik luister!";
+  });
+  R.timer = setInterval(checkStuck, 1000);
+};
+$("stopBtn").onclick = () => finish();
+
+// Boekoe praat -> microfoon even uit, zodat de app Boekoe niet "hoort"
+Player.onTalk(talking => {
+  if (!R.listener || !R.reading) return;
+  R.lastTalk = Date.now();
+  if (talking) R.listener.pause(); else setTimeout(() => R.reading && R.listener.resume(), 250);
+});
+
+function onMicState(state, detail) {
+  $("micwrap").classList.toggle("listening", state === "listening");
+  if (state === "error") {
+    if (detail === "not-allowed") showMicError("De microfoon mag niet gebruikt worden. Sta de microfoon toe in je browser (en op iPhone: Siri en Dicteren aan) en probeer opnieuw.");
+    else if (detail === "language") showMicError("Nederlandse spraakherkenning is niet beschikbaar in deze browser.");
+    else if (detail === "network") showMicError("De spraakherkenning heeft internet nodig. Controleer je verbinding.");
+    else if (detail === "unsupported") showMicError("Meeluisteren werkt niet in deze browser.");
+    if (detail === "not-allowed" && R.reading && R.ready) {
+      // Microfoon viel weg midden in het lezen: NIET opnieuw beginnen, maar verder waar je was
+      R.micLost = true;
+      showMicError("De microfoon stopte even. Tik op de knop om verder te lezen waar je was.");
+      $("readBtn").disabled = false; $("readBtn").textContent = "🎤 Verder lezen";
+    } else if (detail !== "network") stopReading(true);
+  }
+}
+function showMicError(t) { const e = $("micErr"); e.textContent = t; e.style.display = ""; }
+
+function onHeard(finalWords, interimWords) {
+  if (!R.reading) return;
+  R.lastHeard = Date.now();
+  const heardRaw = [...finalWords, ...interimWords];
+  $("heardTxt").textContent = heardRaw.join(" ") || "…";
+  // Voortgang mag op de voorlopige gok, maar een FOUT alleen op wat definitief gehoord is
+  const sure = align(R.expected, finalWords.map(normalize));
+  const live = align(R.expected, heardRaw.map(normalize));
+  const pos = live.pos;
+  const statuses = live.statuses.map((s, i) => s === "misread" && sure.statuses[i] !== "misread" ? "pending" : s);
+  const before = R.statuses;
+  R.statuses = statuses;
+
+  statuses.forEach((s, i) => {
+    if (s === before[i]) return;
+    const w = R.words[i];
+    w.el.classList.remove("now", "fix", "ok", "help", "skip");
+    if (s === "ok" || s === "fixed") {
+      w.el.classList.add(R.helped.has(i) || s === "fixed" ? "help" : "ok");
+      if (!R.startedAt) R.startedAt = Date.now();
+      if (R.helped.has(i)) {             // alleen "goed zo" als Boekoe echt geholpen had
+        say("gotit", { el: $("sayRead"), mood: "good", hideAfter: 1500 });
+      } else if (/[.!?]$/.test(w.raw) && ++R.streak >= PATIENCE.sentencesPerCompliment && i < R.words.length - 1
+                 && Date.now() - R.lastTalk > PATIENCE.complimentGap) {
+        // compliment na een paar goede zinnen, nooit midden in een zin
+        R.streak = 0; say("compliment", { el: $("sayRead"), mood: "good", hideAfter: 1500 });
+      }
+    } else if (s === "misread") {
+      // Nog niet rood maken: misschien leest het kind gewoon door of verbetert het zichzelf
+      if (R.misreadAt !== i) {
+        R.misreadAt = i;
+        clearTimeout(R.misreadTimer);
+        const check = () => {
+          if (!R.reading || R.statuses[i] !== "misread" || R.pos !== i) return;
+          if (Player.playing || Date.now() - R.lastHeard < PATIENCE.misreadQuiet) {   // kind praat nog: later nog eens kijken
+            R.misreadTimer = setTimeout(check, 700); return;
+          }
+          R.helped.add(i); R.streak = 0;
+          w.el.classList.add("fix");
+          // Boekoe wijst het ene woord aan: alleen dít woord nog eens, niet de hele tekst
+          say("misread", { el: $("sayRead"), mood: "fixit", extra: `👉 „${R.words[i].clean}” (alleen dit woord)` });
+        };
+        R.misreadTimer = setTimeout(check, PATIENCE.misreadDelay);
+      }
+    } else if (s === "skipped") {
+      w.el.classList.add("skip");   // niet als fout tellen: kan ook gemist zijn terwijl Boekoe praatte
+    }
+  });
+
+  if (pos !== R.pos) { R.pos = pos; R.lastProgress = Date.now(); R.tried = false; }
+  else if (heardRaw.length > R.heardLen && R.ready) R.tried = true;   // kind probeert het woord (hakkelt)
+  R.heardLen = heardRaw.length;
+  if (R.words[pos]) R.words[pos].el.classList.add("now");
+  $("bar").style.width = (pos / R.words.length * 100) + "%";
+  if (pos >= R.words.length) finish();
+}
+
+// Blijft het kind te lang hangen op hetzelfde woord? Dan helpt Boekoe.
+function checkStuck() {
+  if (!R.reading || !R.ready || R.micLost || Player.playing) { R.lastProgress = Math.max(R.lastProgress, Date.now() - 1000); return; }
+  const i = R.pos; if (i >= R.words.length || R.stuckAt === i) return;
+  const wait = R.statuses[i] === "misread" ? PATIENCE.stuckAfterMisread : R.tried ? PATIENCE.stuckAfterTry : PATIENCE.stuckAfter;
+  if (Date.now() - R.lastProgress > wait && Date.now() - R.lastHeard > PATIENCE.quietBeforeHelp) {
+    R.stuckAt = i; R.helped.add(i); R.streak = 0;
+    R.words[i].el.classList.add("help");
+    say("stuck", { el: $("sayRead"), mood: "tip", extra: syllables(R.words[i].clean, BOOK.syllables).join(" · ") });
+  }
+}
+
+function stopReading(resetBtn) {
+  clearInterval(R.timer); clearTimeout(R.misreadTimer);
+  if (R.listener) { R.listener.stop(); R.listener = null; }
+  R.reading = false;
+  $("micwrap").classList.remove("listening");
+  if (resetBtn) { $("readBtn").disabled = false; $("readBtn").textContent = "🎤 Opnieuw proberen"; $("stopBtn").style.display = "none"; }
+}
+
+/* ================= 4. Klaar ================= */
+function finish() {
+  if (!R.reading) return;
+  stopReading(false);
+  const read = R.statuses.filter(s => s === "ok" || s === "fixed").length;
+  const done = Math.max(R.statuses.filter(s => s !== "pending" && s !== "skipped").length, 1);
+  const minutes = R.startedAt ? (Date.now() - R.startedAt) / 60000 : 0;
+  const wpm = minutes > 0.05 ? Math.round(read / minutes) : 0;
+  const acc = Math.min(100, Math.round(R.statuses.filter((s, i) => s === "ok" && !R.helped.has(i)).length / done * 100));
+  const practice = [...new Set([...R.helped].map(i => R.words[i] && R.words[i].clean).filter(Boolean))].slice(0, 8);
+
+  sessions.push({ date: Date.now(), title: BOOK.title, wpm, acc, practice });
+  LS.set("lm_sessions", sessions.slice(-60));
+
+  $("stWpm").textContent = wpm || "–"; $("stAcc").textContent = acc + "%";
+  $("doneTitle").textContent = `Super, ${childName()}!`;
+  $("chest").innerHTML = practice.length
+    ? practice.map(w => `<button class="chip" data-w="${esc(w)}">🧩 ${esc(w)}</button>`).join("")
+    : `<span class="chip good">Geen lastige woorden!</span>`;
+  document.querySelectorAll("#chest [data-w]").forEach(b => b.onclick = () =>
+    say("word_tap", { el: $("sayDone"), mood: "tip", extra: syllables(b.dataset.w, BOOK.syllables).join(" · ") }));
+  renderQuiz();
+  $("sayDone").classList.add("hidden");
+  setTimeout(() => { go("s-done"); say("page_done", { el: $("sayDone") }); }, 500);
+}
+function renderQuiz() {
+  const q = BOOK.quiz;
+  if (!q) { $("quizCard").style.display = "none"; return; }
+  $("quizCard").style.display = ""; $("quizQ").textContent = q.question;
+  const box = $("quiz"); box.innerHTML = "";
+  q.options.forEach((t, idx) => {
+    const b = document.createElement("button"); b.className = "opt"; b.textContent = t;
+    b.onclick = () => {
+      if (idx === q.answer) { b.classList.add("right"); say("quiz_right", { el: $("sayDone"), mood: "good" }); }
+      else { b.classList.add("wrong"); say("quiz_wrong", { el: $("sayDone"), mood: "fixit" }); }
+    };
+    box.append(b);
+  });
+}
+$("stickerBtn").onclick = () => say("sticker", { el: $("sayDone") });
+$("againBtn").onclick = () => go("s-home");
+
+/* ================= 5. Ouder-overzicht ================= */
+function renderParent() {
+  $("pTitle").textContent = `${childName() === "jij" ? "Je kind" : childName()} deze week`;
+  const hist = sessions.filter(s => s.wpm > 0).slice(-7).map(s => s.wpm);
+  const svg = $("chart"), W = 320, H = 150, pad = 24;
+  if (!hist.length) {
+    svg.innerHTML = `<text x="160" y="80" text-anchor="middle" font-size="14" fill="#77727F" font-family="Nunito">Nog geen leesbeurten</text>`;
+    $("trend").textContent = ""; $("trend").style.display = "none";
+  } else {
+    const max = Math.max(60, ...hist) + 5, bw = (W - pad * 2) / hist.length;
+    let out = `<line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="#EFE6D8" stroke-width="2"/>`;
+    hist.forEach((v, i) => {
+      const h = (v / max) * (H - pad * 2), x = pad + i * bw + bw * .18, y = H - pad - h, last = i === hist.length - 1;
+      out += `<rect x="${x}" y="${y}" width="${bw * .64}" height="${h}" rx="7" fill="${last ? "#6A4CE0" : "#D3C8FF"}"/>`;
+      out += `<text x="${x + bw * .32}" y="${y - 6}" text-anchor="middle" font-size="12" font-weight="800" fill="#2B2A33" font-family="Nunito">${v}</text>`;
+    });
+    svg.innerHTML = out;
+    const t = hist.length > 1 ? Math.round((hist[hist.length - 1] / hist[0] - 1) * 100) : 0;
+    const tr = $("trend"); tr.style.display = hist.length > 1 ? "" : "none";
+    tr.textContent = (t >= 0 ? "+" : "") + t + "%"; tr.className = "chip " + (t >= 0 ? "good" : "");
+  }
+  const counts = {};
+  sessions.slice(-20).forEach(s => (s.practice || []).forEach(w => counts[w] = (counts[w] || 0) + 1));
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([w]) => w);
+  $("hardWords").innerHTML = top.length ? top.map(w => `<span class="chip">${esc(w)}</span>`).join("") : `<span class="small muted">Nog niets bijzonders.</span>`;
+}
+
+/* ================= Start ================= */
+$("brandFace").innerHTML = boekoeSVG("blij");
+$("mascotBtn").innerHTML = boekoeSVG("blij");
+setVars({ naam: childName() });
+loadLines().catch(() => {}).finally(() => go(profile ? "s-home" : "s-onboard"));
+
+})();
+</script>
+</body>
+</html>

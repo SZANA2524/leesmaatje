@@ -1,0 +1,58 @@
+{"_uitleg":"Alle zinnen van Boekoe. Per moment een lijst zinnen; 'file' verwijst naar audio/boekoe/. Nieuwe zin? Zet het geluidsbestand in audio/boekoe/ en voeg hier een regel toe. Zonder 'file' toont Boekoe alleen de tekst.","categories":[
+{"id":"welkom","label":"Welkomstberichten","emoji":"👋"},
+{"id":"dagelijks","label":"Dagelijkse begroetingen","emoji":"🌞"},
+{"id":"instructies","label":"Instructies","emoji":"🧭"},
+{"id":"interactief","label":"Interactieve reacties","emoji":"🎈"},
+{"id":"complimenten","label":"Complimenten","emoji":"⭐"},
+{"id":"fouten","label":"Foutmeldingen (lief)","emoji":"🙃"},
+{"id":"beloningen","label":"Beloningen","emoji":"🏆"},
+{"id":"verhalen","label":"Verhalen","emoji":"📚"}],"moments":[
+{"id":"welcome_first","category":"welkom","label":"Allereerste keer","when":"Het kind opent de app voor het eerst","priority":3,"lines":[
+{"id":"welcome_first-1","text":"Halloooo! Ik ben Boekoe! Hihi, ik ben zó blij dat je er bent!","emotion":"blij","file":"welcome_first-1.webm"}]},
+{"id":"welcome_back","category":"welkom","label":"Terug op het startscherm","when":"Het kind komt later die dag terug","priority":2,"lines":[
+{"id":"welcome_back-1","text":"Hé, jij weer! Joepie! Ik heb op je gewacht!","emotion":"blij","file":"welcome_back-1.webm"},
+{"id":"welcome_back-2","text":"Halloooo! Klaar voor een avontuur? Hihi, ik wel!","emotion":"ondeugend","file":"welcome_back-2.webm"}]},
+{"id":"greet_morning","category":"dagelijks","label":"Ochtend","when":"Eerste keer die dag, vóór 12 uur","priority":2,"lines":[
+{"id":"greet_morning-1","text":"Goeiemorgen! Ik heb gedroomd van letters. Ze kietelden! Hihi!","emotion":"ondeugend","file":"greet_morning-1.webm"}]},
+{"id":"greet_afternoon","category":"dagelijks","label":"Middag","when":"Eerste keer die dag, tussen 12 en 18 uur","priority":2,"lines":[
+{"id":"greet_afternoon-1","text":"Hoi hoi! Zullen we samen een stukje lezen?","emotion":"blij","file":"greet_afternoon-1.webm"}]},
+{"id":"greet_evening","category":"dagelijks","label":"Avond","when":"Eerste keer die dag, na 18 uur","priority":2,"lines":[
+{"id":"greet_evening-1","text":"Goeienavond! Nog eentje voor het slapengaan? Lekker knus!","emotion":"rustig","file":"greet_evening-1.webm"}]},
+{"id":"instr_photo","category":"instructies","label":"Foto maken","when":"Het kind doet een tijdje niets op het startscherm","priority":1,"lines":[
+{"id":"instr_photo-1","text":"Pak je boek! Maak een foto van de bladzijde. Ik ben zó benieuwd!","emotion":"nieuwsgierig","file":"instr_photo-1.webm"}]},
+{"id":"instr_read","category":"instructies","label":"Beginnen met lezen","when":"Het kind tikt op ‘Ik ga lezen’","priority":3,"lines":[
+{"id":"instr_read-1","text":"Lees maar hardop. Mijn bladzij-oren staan aan! Hihi.","emotion":"ondeugend","file":"instr_read-1.webm"},
+{"id":"instr_read-2","text":"Kom op, we gaan op ontdekking!","emotion":"nieuwsgierig","file":"instr_read-2.webm"}]},
+{"id":"tap_boekoe","category":"interactief","label":"Op Boekoe tikken","when":"Het kind tikt op Boekoe","priority":1,"lines":[
+{"id":"tap_boekoe-1","text":"Hihi, dat kietelt!","emotion":"ondeugend","file":"tap_boekoe-1.webm"},
+{"id":"tap_boekoe-2","text":"Hé! Niet aan mijn oren, daar staan verhalen op!","emotion":"ondeugend","file":"tap_boekoe-2.webm"},
+{"id":"tap_boekoe-3","text":"Boe! Hihi, schrok je?","emotion":"verrast","file":"tap_boekoe-3.webm"}]},
+{"id":"stuck","category":"interactief","label":"Lastig woord","when":"Het kind blijft hangen op een woord","priority":3,"lines":[
+{"id":"stuck-1","text":"Hmm, lastig woord, hè? We doen hem in stukjes:","emotion":"rustig","file":"stuck-1.webm"},
+{"id":"stuck-2","text":"Geeft niks hoor! Die is ook echt moeilijk. Kijk:","emotion":"bemoedigend","file":"stuck-2.webm"}]},
+{"id":"word_tap","category":"interactief","label":"Woord aantikken","when":"Het kind tikt op een woord","priority":1,"lines":[
+{"id":"word_tap-1","text":"Ooh, dat woord! In stukjes is het een makkie:","emotion":"nieuwsgierig","file":"word_tap-1.webm"}]},
+{"id":"compliment","category":"complimenten","label":"Na een goede zin","when":"Na een paar zinnen goed gelezen","priority":1,"lines":[
+{"id":"compliment-1","text":"Wauw! Jij wordt steeds slimmer!","emotion":"blij","file":"compliment-1.webm"},
+{"id":"compliment-2","text":"Joehoe! Wat lees jij goed!","emotion":"trots","file":"compliment-2.webm"},
+{"id":"compliment-3","text":"Wow, jij leest supervlot!","emotion":"verrast","file":"compliment-3.webm"},
+{"id":"compliment-4","text":"Ga zo door, kanjer!","emotion":"blij","file":"compliment-4.webm"}]},
+{"id":"gotit","category":"complimenten","label":"Lastig woord gelukt","when":"Na hulp het woord toch goed gelezen","priority":2,"lines":[
+{"id":"gotit-1","text":"Yes! Die was moeilijk en jij deed het!","emotion":"trots","file":"gotit-1.webm"},
+{"id":"gotit-2","text":"Goed gezien, speurneus!","emotion":"blij","file":"gotit-2.webm"}]},
+{"id":"misread","category":"fouten","label":"Woord fout gelezen","when":"Het kind leest een woord verkeerd","priority":3,"lines":[
+{"id":"misread-1","text":"Oepsie! Nog een keertje? Dat lukt vast!","emotion":"bemoedigend","file":"misread-1.webm"},
+{"id":"misread-2","text":"Bijna! Kijk eens naar het eind van het woord.","emotion":"rustig","file":"misread-2.webm"}]},
+{"id":"quiz_wrong","category":"fouten","label":"Vraag nog niet goed","when":"Verkeerd antwoord op de verhaalvraag","priority":2,"lines":[
+{"id":"quiz_wrong-1","text":"Hmm, bijna! Kijk nog even in het verhaal. Jij kunt dit!","emotion":"bemoedigend","file":"quiz_wrong-1.webm"}]},
+{"id":"page_done","category":"beloningen","label":"Bladzijde uit","when":"De hele bladzijde is gelezen","priority":3,"lines":[
+{"id":"page_done-1","text":"Joehoeee! De hele bladzijde! Wat knap!","emotion":"trots","file":"page_done-1.webm"},
+{"id":"page_done-2","text":"Helemaal uit! Ik ben echt trots op jou!","emotion":"trots","file":"page_done-2.webm"}]},
+{"id":"quiz_right","category":"beloningen","label":"Vraag goed","when":"Goed antwoord op de verhaalvraag","priority":2,"lines":[
+{"id":"quiz_right-1","text":"Ja! Goed onthouden! Jij hebt super opgelet!","emotion":"verrast","file":"quiz_right-1.webm"}]},
+{"id":"sticker","category":"beloningen","label":"Sticker","when":"Het kind tikt op de sticker","priority":1,"lines":[
+{"id":"sticker-1","text":"Kijk, een gouden ster! Die is helemaal voor jou!","emotion":"trots","file":"sticker-1.webm"}]},
+{"id":"story","category":"verhalen","label":"Boekoe vertelt","when":"Het kind tikt op ‘Pssst…’","priority":2,"lines":[
+{"id":"story-1","text":"Pssst... zal ik je een geheimpje vertellen? Ik eet geen koekjes. Ik eet letters! Hihi!","emotion":"ondeugend","file":"story-1.webm"},
+{"id":"story-2","text":"Wist je dat mijn oren bladzijdes zijn? Daar bewaar ik al mijn verhalen!","emotion":"nieuwsgierig","file":"story-2.webm"},
+{"id":"story-3","text":"Weet je wat mijn lievelingsletter is? De B! Van Boekoe! Hihi.","emotion":"ondeugend","file":"story-3.webm"}]}]}
