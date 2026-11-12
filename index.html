@@ -229,7 +229,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 8</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 9</p></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -858,13 +858,13 @@ function say(momentId, o = {}) {
       if (o.hideAfter) hideTimers[key] = setTimeout(() => o.el.classList.add("hidden"), o.hideAfter);
       resolve();
     };
-    const src = Sound.on ? Player.src(line) : null;
+    const src = Sound.on && !o.silent ? Player.src(line) : null;   // silent: alleen de tekstballon
     if (src) {
       Player.play(src, prio, { onStart: () => svg && svg.classList.add("talking"),
                                onEnd: () => { svg && svg.classList.remove("talking"); done(); } });
     } else {
-      if (Player.playing) Player.stop();
-      setTimeout(done, 700 + text.length * 45);
+      if (Player.playing && !o.silent) Player.stop();
+      setTimeout(done, o.silent ? 0 : 700 + text.length * 45);
     }
   });
 }
@@ -1081,11 +1081,11 @@ const R = {                       // alles van de huidige leesbeurt
 // Hoe geduldig Boekoe is (in milliseconden). Hoger = Boekoe praat minder snel.
 const PATIENCE = {
   stuckAfter: 6000,         // niets gezegd: zo lang wachten voordat Boekoe helpt
-  stuckAfterTry: 2500,      // wél geprobeerd (gehakkeld) en dan stil: sneller helpen
+  stuckAfterTry: 1800,      // wél geprobeerd (gehakkeld) en dan stil: sneller helpen
   stuckAfterMisread: 8000,  // na een verbetering: nog even de kans geven
-  quietBeforeHelp: 2500,    // het kind moet ook echt even stil zijn
-  misreadDelay: 1500,       // eerst zelf laten verbeteren voordat Boekoe iets zegt
-  misreadQuiet: 2000,       // en alleen als het kind even stil is (niet midden in het lezen)
+  quietBeforeHelp: 1800,    // het kind moet ook echt even stil zijn
+  misreadDelay: 900,        // eerst zelf laten verbeteren voordat Boekoe iets zegt
+  misreadQuiet: 1300,       // en alleen als het kind even stil is (niet midden in het lezen)
   sentencesPerCompliment: 4,
   complimentGap: 30000,     // minimaal zoveel tijd sinds Boekoe iets zei, voor een compliment
   moveOnAfter: 9000,        // na hulp nog steeds stil: dan samen verder naar het volgende woord
@@ -1152,14 +1152,14 @@ $("stopBtn").onclick = () => finish();
 Player.onTalk(talking => {
   if (!R.listener || !R.reading) return;
   R.lastTalk = Date.now();
-  if (talking) { R.listener.pause(); return; }
+  if (talking) { R.listener.pause(); if (R.ready) $("readBtn").textContent = "🤫 Boekoe praat… even wachten"; return; }
   setTimeout(() => {
     if (!R.reading || R.micLost || !R.listener) return;
     R.resumedAt = Date.now(); R.listener.resume();
     // Komt de microfoon niet terug (gebeurt op iPhone)? Dan het kind laten tikken: een tik mag hem altijd aanzetten.
     setTimeout(() => {
       if (R.reading && !R.micLost && !Player.playing && R.micAliveAt < R.resumedAt) askTap();
-    }, 2500);
+    }, 1800);
   }, IS_IOS ? 600 : 250);
 });
 
@@ -1170,10 +1170,13 @@ function askTap() {
   const b = $("readBtn"); b.disabled = false; b.textContent = "🎤 Tik en lees verder"; b.classList.add("pulse");
 }
 function onMicState(state, detail) {
-  if (state === "listening" || state === "audio") R.micAliveAt = Date.now();
+  if (state === "listening" || state === "audio") {
+    R.micAliveAt = Date.now();
+    if (R.reading && R.ready && !R.micLost) $("readBtn").textContent = "👂 Lees maar, ik luister!";
+  }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 8 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 9 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1219,11 +1222,11 @@ function onHeard(finalWords, interimWords) {
       w.el.classList.add(R.helped.has(i) || s === "fixed" ? "help" : "ok");
       if (!R.startedAt) R.startedAt = Date.now();
       if (R.helped.has(i)) {             // alleen "goed zo" als Boekoe echt geholpen had
-        say("gotit", { el: $("sayRead"), mood: "good", hideAfter: 1500 });
+        say("gotit", { el: $("sayRead"), mood: "good", hideAfter: 2500, silent: true });   // tijdens het lezen: alleen ballon, microfoon blijft aan
       } else if (/[.!?]$/.test(w.raw) && ++R.streak >= PATIENCE.sentencesPerCompliment && i < R.words.length - 1
                  && Date.now() - R.lastTalk > PATIENCE.complimentGap) {
         // compliment na een paar goede zinnen, nooit midden in een zin
-        R.streak = 0; say("compliment", { el: $("sayRead"), mood: "good", hideAfter: 1500 });
+        R.streak = 0; say("compliment", { el: $("sayRead"), mood: "good", hideAfter: 2500, silent: true });
       }
     } else if (s === "misread") {
       // Nog niet rood maken: misschien leest het kind gewoon door of verbetert het zichzelf
@@ -1248,7 +1251,12 @@ function onHeard(finalWords, interimWords) {
   });
 
   if (pos !== R.pos) { R.pos = pos; R.lastProgress = Date.now(); R.tried = false; }
-  else if (heardRaw.length > R.heardLen && R.ready) R.tried = true;   // kind probeert het woord (hakkelt)
+  else if (heardRaw.length > R.heardLen && R.ready) {
+    // Kind probeert het woord (hakkelt)? Niet als het gewoon een vorig woord herhaalt (terug-lezen).
+    const lastW = normalize(heardRaw[heardRaw.length - 1] || "");
+    const reread = R.expected.slice(Math.max(0, pos - 4), pos).some(e => e === lastW || similarity(e, lastW) >= 0.7);
+    if (!reread) R.tried = true;
+  }
   R.heardLen = heardRaw.length;
   if (R.words[pos]) R.words[pos].el.classList.add("now");
   $("bar").style.width = (pos / R.words.length * 100) + "%";
