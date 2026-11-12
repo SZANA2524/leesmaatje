@@ -470,6 +470,9 @@ function syllables(word, known = {}) {
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+/** iPhone/iPad: daar is het herstarten van de spraakherkenning traag en hapert het soms. */
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
 function isSupported() {
   return !!Recognition && window.isSecureContext;
 }
@@ -489,6 +492,9 @@ class Listener {
     this.paused = false;      // tijdelijk stil omdat Boekoe praat
     this.rec = null;
     this.restartTimer = null;
+    this.prevFinal = [];      // definitief uit eerdere sessies
+    this.muted = false;       // iPhone: wel blijven luisteren, maar negeren (Boekoe praat)
+    this.cuts = [];           // iPhone: stukken van deze sessie overslaan (gehoord terwijl Boekoe praatte)
   }
 
   start() {
@@ -497,6 +503,8 @@ class Listener {
     this.paused = false;
     this.finalWords = [];
     this.interimWords = [];
+    this.prevFinal = [];
+    this.cuts = [];
     this._open();
   }
 
@@ -510,6 +518,7 @@ class Listener {
   /** Tijdelijk niet luisteren (bijv. terwijl Boekoe praat). */
   pause() {
     if (!this.active || this.paused) return;
+    if (IS_IOS && this.rec) { this.paused = true; this.muted = true; this.muteAt = this.sessionFinal || 0; this.interimWords = []; this.onState("paused"); return; }
     this.paused = true;
     this.interimWords = [];          // wat half gehoord was, telt niet
     this._close();
@@ -519,6 +528,7 @@ class Listener {
   resume() {
     if (!this.active || !this.paused) return;
     this.paused = false;
+    if (this.muted) { this.muted = false; this.cuts.push([this.muteAt, this.sessionCount || 0]); if (this.rec) { this.onState("listening"); return; } }
     this._open();
   }
 
@@ -543,16 +553,21 @@ class Listener {
 
     rec.onstart = () => this.onState("listening");
 
+    // Elke keer de hele sessie opnieuw opbouwen: Safari stuurt resultaten soms dubbel of opnieuw.
+    this.sessionCount = 0;
     rec.onresult = (ev) => {
-      if (this.paused) return;
-      let interim = [];
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const all = [];
+      for (let i = 0; i < ev.results.length; i++) {
         const res = ev.results[i];
-        const words = res[0].transcript.trim().split(/\s+/).filter(Boolean);
-        if (res.isFinal) this.finalWords.push(...words);
-        else interim.push(...words);
+        for (const w of res[0].transcript.trim().split(/\s+/).filter(Boolean)) all.push({ w, fin: res.isFinal });
       }
-      this.interimWords = interim;
+      this.sessionCount = all.length;
+      this.sessionFinal = all.filter(x => x.fin).length;
+      if (this.paused) return;
+      // Woorden die binnenkwamen terwijl Boekoe praatte (iPhone) tellen niet mee
+      const keep = all.filter((_, i) => !this.cuts.some(([a, b]) => i >= a && i < b));
+      this.finalWords = [...this.prevFinal, ...keep.filter(x => x.fin).map(x => x.w)];
+      this.interimWords = keep.filter(x => !x.fin).map(x => x.w);
       this.onWords([...this.finalWords], [...this.interimWords]);
     };
 
@@ -573,6 +588,9 @@ class Listener {
       this.rec = null;
       // Voorlopige woorden van een afgebroken sessie toch meenemen (Safari maakt ze soms niet definitief).
       if (this.interimWords.length && !this.paused) { this.finalWords.push(...this.interimWords); this.interimWords = []; }
+      this.prevFinal = [...this.finalWords];
+      this.cuts = []; this.sessionCount = 0;
+      if (this.muted) { this.paused = true; this.muted = false; return; }   // tijdens praten gestopt: resume() start opnieuw
       if (this.active && !this.paused) this.restartTimer = setTimeout(() => this._open(), 150);
     };
 
@@ -581,6 +599,8 @@ class Listener {
   }
 
   _close() {
+    this.prevFinal = [...this.finalWords];   // wat al gehoord is bewaren voor de volgende sessie
+    this.cuts = []; this.sessionCount = 0;
     const rec = this.rec;
     this.rec = null;
     if (rec) { rec.onend = null; rec.onresult = null; try { rec.abort(); } catch (e) {} }
@@ -1074,7 +1094,7 @@ $("readBtn").onclick = () => {
   }
   Object.assign(R, { statuses: R.expected.map(() => "pending"), pos: 0, startedAt: 0, lastProgress: Date.now(),
                      stuckAt: -1, misreadAt: -1, helped: new Set(), streak: 0, reading: true,
-                     lastHeard: Date.now(), lastTalk: Date.now(), ready: false, micLost: false, tried: false, heardLen: 0 });
+                     lastHeard: Date.now(), lastTalk: Date.now(), ready: false, micLost: false, tried: false, heardLen: 0, heardStr: "" });
   R.words.forEach(w => w.el.className = "w");
   $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
 
@@ -1117,14 +1137,16 @@ function showMicError(t) { const e = $("micErr"); e.textContent = t; e.style.dis
 
 function onHeard(finalWords, interimWords) {
   if (!R.reading) return;
-  R.lastHeard = Date.now();
   const heardRaw = [...finalWords, ...interimWords];
+  const heardStr = heardRaw.join(" ");
+  if (heardStr !== R.heardStr) { R.lastHeard = Date.now(); R.heardStr = heardStr; }   // alleen nieuwe woorden tellen als "praten"
   $("heardTxt").textContent = heardRaw.join(" ") || "…";
   // Voortgang mag op de voorlopige gok, maar een FOUT alleen op wat definitief gehoord is
   const sure = align(R.expected, finalWords.map(normalize));
   const live = align(R.expected, heardRaw.map(normalize));
   const pos = live.pos;
-  const statuses = live.statuses.map((s, i) => s === "misread" && sure.statuses[i] !== "misread" ? "pending" : s);
+  // iPhone maakt woorden pas laat definitief: daar ook op de voorlopige gok verbeteren (na stilte, dus veilig)
+  const statuses = IS_IOS ? live.statuses : live.statuses.map((s, i) => s === "misread" && sure.statuses[i] !== "misread" ? "pending" : s);
   const before = R.statuses;
   R.statuses = statuses;
 
