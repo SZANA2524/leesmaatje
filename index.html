@@ -228,7 +228,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox"><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 5</p></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -551,13 +551,9 @@ class Listener {
     rec.interimResults = true;
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => { clearTimeout(this.startTimer); this.tries = 0; this.onState("listening"); };
-    // Start de herkenning niet binnen 2 seconden (gebeurt soms op iPhone na geluid)? Opnieuw proberen.
-    clearTimeout(this.startTimer);
-    this.startTimer = setTimeout(() => {
-      if (this.rec !== rec || !this.active || this.paused || (this.tries = (this.tries || 0) + 1) > 3) return;
-      this._close(); this._open();
-    }, 2000);
+    rec.onstart = () => this.onState("listening");
+    rec.onaudiostart = () => this.onState("debug", "microfoon aan");
+    rec.onspeechstart = () => this.onState("debug", "spraak gehoord");
 
     // Elke keer de hele sessie opnieuw opbouwen: Safari stuurt resultaten soms dubbel of opnieuw.
     this.sessionCount = 0;
@@ -578,6 +574,7 @@ class Listener {
     };
 
     rec.onerror = (ev) => {
+      this.onState("debug", "fout: " + ev.error);
       // "no-speech" en "aborted" zijn normaal; die lossen we op met herstarten.
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
         this.active = false;
@@ -591,6 +588,7 @@ class Listener {
     };
 
     rec.onend = () => {
+      this.onState("debug", "gestopt" + (this.active && !this.paused ? ", herstart" : ""));
       this.rec = null;
       // Voorlopige woorden van een afgebroken sessie toch meenemen (Safari maakt ze soms niet definitief).
       if (this.interimWords.length && !this.paused) { this.finalWords.push(...this.interimWords); this.interimWords = []; }
@@ -601,7 +599,9 @@ class Listener {
     };
 
     this.rec = rec;
-    try { rec.start(); } catch (e) { this.rec = null; this.restartTimer = setTimeout(() => this._open(), 300); }
+    this.onState("debug", "start");
+    try { rec.start(); } catch (e) {
+      this.onState("debug", "startfout: " + (e && e.message)); this.rec = null; this.restartTimer = setTimeout(() => this._open(), 300); }
   }
 
   _close() {
@@ -1125,7 +1125,12 @@ Player.onTalk(talking => {
   if (talking) R.listener.pause(); else setTimeout(() => R.reading && R.listener.resume(), IS_IOS ? 600 : 250);   // iPhone heeft even nodig om de microfoon terug te geven
 });
 
+const micLog = [];
 function onMicState(state, detail) {
+  micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
+  if (micLog.length > 6) micLog.shift();
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 5 · " + micLog.join(" → ");
+  if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
     if (detail === "not-allowed") showMicError("De microfoon mag niet gebruikt worden. Sta de microfoon toe in je browser (en op iPhone: Siri en Dicteren aan) en probeer opnieuw.");
