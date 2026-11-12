@@ -230,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 11</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 12</p></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -547,6 +547,31 @@ class Listener {
     this._open();
   }
 
+  /**
+   * Netjes stoppen en WACHTEN tot de microfoon echt uit is (voordat Boekoe gaat praten).
+   * Op iPhone mag er nooit geluid spelen terwijl de spraakherkenning nog loopt:
+   * dan verstaat Safari daarna niets meer en gaat het geluid naar de zachte bellerspeaker.
+   */
+  halt() {
+    if (!this.active) return Promise.resolve();
+    this.paused = true;
+    this.interimWords = [];
+    clearTimeout(this.restartTimer);
+    this.prevFinal = [...this.finalWords];
+    this.cuts = []; this.sessionCount = 0;
+    const rec = this.rec; this.rec = null;
+    this.onState("paused");
+    if (!rec) return Promise.resolve();
+    return new Promise(resolve => {
+      let doneIt = false;
+      const done = () => { if (doneIt) return; doneIt = true; clearTimeout(timer); resolve(); };
+      const timer = setTimeout(done, 1200);
+      rec.onresult = null; rec.onerror = null;
+      rec.onend = () => { this.onState("debug", "uit (Boekoe praat)"); done(); };
+      try { rec.abort(); } catch (e) { done(); }
+    });
+  }
+
   /** Tijdelijk niet luisteren (bijv. terwijl Boekoe praat). */
   pause() {
     if (!this.active || this.paused) return;
@@ -812,13 +837,21 @@ const Player = {
     lines.forEach(l => { const s = this.src(l); if (!s || this.cache[s]) return; this.cache[s] = "pending";
       fetch(s).then(r => r.ok ? r.blob() : Promise.reject()).then(b => { this.cache[s] = URL.createObjectURL(b); }).catch(() => { delete this.cache[s]; }); });
   },
+  /** Optioneel: iets dat eerst moet gebeuren vóór Boekoe praat (de microfoon helemaal uitzetten). */
+  gate: null,
   play(src, prio, { onStart, onEnd } = {}) {
     this.stop();
     this.prio = prio; this.playing = true; this.onEnd = onEnd || null;
+    const token = this.token = (this.token || 0) + 1;
     this.emit(true);
     const real = (this.cache[src] && this.cache[src] !== "pending") ? this.cache[src] : src;
-    try { this.el.src = real; this.el.currentTime = 0; const p = this.el.play(); if (onStart) onStart(); if (p && p.catch) p.catch(() => this.finish(false)); }
-    catch (e) { this.finish(false); }
+    const go = () => {
+      if (token !== this.token || !this.playing) return;    // intussen gestopt of iets anders gestart
+      try { this.el.src = real; this.el.currentTime = 0; const p = this.el.play(); if (onStart) onStart(); if (p && p.catch) p.catch(() => this.finish(false)); }
+      catch (e) { this.finish(false); }
+    };
+    const g = this.gate && this.gate();
+    if (g && g.then) g.then(go, go); else go();
   },
   finish(ok) { if (!this.playing) return; this.playing = false; this.prio = 0; const f = this.onEnd; this.onEnd = null; if (f) f(ok); this.emit(false); },
   stop() { try { this.el.pause(); } catch (e) {} this.finish(false); },
@@ -1087,8 +1120,8 @@ const R = {                       // alles van de huidige leesbeurt
 };
 // Hoe geduldig Boekoe is (in milliseconden). Hoger = Boekoe praat minder snel.
 // iPhone/iPad (Safari): zodra er geluid speelt terwijl er geluisterd wordt, verstaat Safari daarna niets meer.
-// Daarom praat Boekoe daar tijdens het lezen niet hardop (ballon + oplichtend woord), en blijft de microfoon gewoon aan.
-const VOICE_WHILE_READING = !IS_IOS;
+// Daarom: vóór Boekoe praat de microfoon helemaal uit (wachten tot hij echt uit is), daarna weer aan.
+const VOICE_WHILE_READING = true;   // Boekoe praat overal hardop; de microfoon gaat eerst helemaal uit (zie Player.gate)
 const PATIENCE = {
   stuckAfter: 6000,         // niets gezegd: zo lang wachten voordat Boekoe helpt
   stuckAfterTry: 1800,      // wél geprobeerd (gehakkeld) en dan stil: sneller helpen
@@ -1161,6 +1194,10 @@ $("readBtn").onclick = () => {
 $("stopBtn").onclick = () => finish();
 
 // Boekoe praat -> microfoon even uit, zodat de app Boekoe niet "hoort"
+Player.gate = () => {
+  if (!R.listener || !R.reading) return null;
+  return R.listener.halt().then(() => new Promise(r => setTimeout(r, IS_IOS ? 250 : 0)));   // iPhone: even tijd om naar luidspreker te schakelen
+};
 Player.onTalk(talking => {
   if (!R.listener || !R.reading) return;
   R.lastTalk = Date.now();
@@ -1194,7 +1231,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 11 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 12 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1325,7 +1362,7 @@ function checkStuck() {
 
 function stopReading(resetBtn) {
   clearInterval(R.timer); clearTimeout(R.misreadTimer);
-  if (R.listener) { R.listener.stop(); R.listener = null; }
+  if (R.listener) { const L = R.listener; R.listener = null; R.micOff = L.halt().then(() => L.stop()); }   // wachten tot de mic echt uit is
   R.reading = false;
   $("micwrap").classList.remove("listening");
   if (resetBtn) { $("readBtn").disabled = false; $("readBtn").textContent = "🎤 Opnieuw proberen"; $("stopBtn").style.display = "none"; }
@@ -1354,7 +1391,7 @@ function finish() {
     say("word_tap", { el: $("sayDone"), mood: "tip", extra: syllables(b.dataset.w, BOOK.syllables).join(" · ") }));
   renderQuiz();
   $("sayDone").classList.add("hidden");
-  setTimeout(() => { go("s-done"); say("page_done", { el: $("sayDone") }); }, 500);
+  Promise.all([R.micOff, new Promise(r => setTimeout(r, 500))]).then(() => { go("s-done"); say("page_done", { el: $("sayDone") }); });   // pas praten als de microfoon uit is
 }
 function renderQuiz() {
   const q = BOOK.quiz;
