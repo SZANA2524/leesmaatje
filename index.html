@@ -159,6 +159,7 @@ details.heard summary{cursor:pointer;font-weight:800}
 details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 10px;max-height:90px;overflow:auto}
 .opt .small{font-weight:600}
 .pulse{animation:pulse 1s ease-in-out infinite alternate}@keyframes pulse{to{transform:scale(1.06);box-shadow:0 0 0 8px rgba(255,170,60,.35)}}
+.w.again{animation:again .45s ease-in-out 3 alternate;background:#ffe08a;border-radius:6px}@keyframes again{to{transform:scale(1.18)}}
 </style>
 </head>
 <body>
@@ -229,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 9</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 11</p></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -414,15 +415,21 @@ function align(expected, heard, t = THRESHOLDS, forced = null) {
       p += 2;
       continue;
     }
+    // 3b. Herhaalt het kind het vorige woord (of het woord ervoor)? Geen sprong, gewoon negeren.
+    if ((p >= 1 && matches(h, expected[p - 1], t)) || (p >= 2 && matches(h, expected[p - 2], t))) continue;
     // 4. Verder weg weer aangehaakt? Bijvoorbeeld omdat de microfoon even uit stond terwijl Boekoe praatte.
     //    Alleen als twee gehoorde woorden achter elkaar precies kloppen, om vergissingen te voorkomen.
     let jumped = false;
-    for (let j = 2; j <= t.maxJump && p + j + 1 < expected.length + 1; j++) {
+    for (let j = 1; j <= t.maxJump && p + j + 1 < expected.length + 1; j++) {   // dichtstbijzijnde plek eerst
       const a = expected[p + j], b = expected[p + j + 1];
-      if (a && b && matches(h, a, t) && heard[k + 1] && matches(heard[k + 1], b, t)) {
+      // Twee korte woordjes ("in de") komen vaak vaker voor: dan ook het derde woord laten kloppen
+      const c = expected[p + j + 2], needThird = isSmall(a || "") && isSmall(b || "");
+      if (a && b && matches(h, a, t) && heard[k + 1] && matches(heard[k + 1], b, t)
+          && (!needThird || (c && heard[k + 2] && matches(heard[k + 2], c, t)))) {
         for (let x = p; x < p + j; x++) if (statuses[x] === "pending") statuses[x] = isSmall(expected[x]) ? "ok" : "skipped";
         statuses[p + j] = "ok"; statuses[p + j + 1] = "ok";
-        p += j + 2; k++; jumped = true;
+        if (needThird) { statuses[p + j + 2] = "ok"; p += j + 3; k += 2; } else { p += j + 2; k++; }
+        jumped = true;
         break;
       }
     }
@@ -1079,6 +1086,9 @@ const R = {                       // alles van de huidige leesbeurt
   lastHeard: 0, lastTalk: 0, misreadTimer: null, ready: false, micLost: false, tried: false, heardLen: 0,
 };
 // Hoe geduldig Boekoe is (in milliseconden). Hoger = Boekoe praat minder snel.
+// iPhone/iPad (Safari): zodra er geluid speelt terwijl er geluisterd wordt, verstaat Safari daarna niets meer.
+// Daarom praat Boekoe daar tijdens het lezen niet hardop (ballon + oplichtend woord), en blijft de microfoon gewoon aan.
+const VOICE_WHILE_READING = !IS_IOS;
 const PATIENCE = {
   stuckAfter: 6000,         // niets gezegd: zo lang wachten voordat Boekoe helpt
   stuckAfterTry: 1800,      // wél geprobeerd (gehakkeld) en dan stil: sneller helpen
@@ -1089,6 +1099,7 @@ const PATIENCE = {
   sentencesPerCompliment: 4,
   complimentGap: 30000,     // minimaal zoveel tijd sinds Boekoe iets zei, voor een compliment
   moveOnAfter: 9000,        // na hulp nog steeds stil: dan samen verder naar het volgende woord
+  moveOnSilent: 6000,       // na hulp helemaal niets meer gezegd: na zoveel ms samen verder
 };
 // iPhone (Safari) geeft woorden later door; daarom daar kortere wachttijden, anders stapelt de vertraging op
 if (IS_IOS) Object.assign(PATIENCE, { stuckAfter: 4500, stuckAfterTry: 1200, quietBeforeHelp: 1200,
@@ -1135,10 +1146,11 @@ $("readBtn").onclick = () => {
   R.words.forEach(w => w.el.className = "w");
   $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
 
+  if (!VOICE_WHILE_READING) Player.stop();               // iPhone: geen geluid terwijl de microfoon aangaat
   R.listener = new Listener({ onWords: onHeard, onState: onMicState });
   R.listener.start();                                   // binnen de tik starten: dan mag de microfoon aan
   // Eerst Boekoe laten uitpraten, dán pas het kind laten beginnen (anders mist hij het begin)
-  say("instr_read", { el: $("sayRead"), hideAfter: 1500 }).then(() => {
+  say("instr_read", { el: $("sayRead"), hideAfter: VOICE_WHILE_READING ? 1500 : 3500, silent: !VOICE_WHILE_READING }).then(() => {
     if (!R.reading) return;
     R.ready = true; R.lastProgress = Date.now(); R.lastHeard = Date.now();
     if (R.words[R.pos]) R.words[R.pos].el.classList.add("now");
@@ -1152,6 +1164,7 @@ $("stopBtn").onclick = () => finish();
 Player.onTalk(talking => {
   if (!R.listener || !R.reading) return;
   R.lastTalk = Date.now();
+  if (!VOICE_WHILE_READING) return;
   if (talking) { R.listener.pause(); if (R.ready) $("readBtn").textContent = "🤫 Boekoe praat… even wachten"; return; }
   setTimeout(() => {
     if (!R.reading || R.micLost || !R.listener) return;
@@ -1172,11 +1185,16 @@ function askTap() {
 function onMicState(state, detail) {
   if (state === "listening" || state === "audio") {
     R.micAliveAt = Date.now();
-    if (R.reading && R.ready && !R.micLost) $("readBtn").textContent = "👂 Lees maar, ik luister!";
+    if (R.reading && R.ready && !R.micLost) {
+      $("readBtn").textContent = "👂 Lees maar, ik luister!";
+      // Net geholpen? Laat het woord even oplichten: "nu jij!"
+      const w = R.words[R.pos];
+      if (w && R.helped.has(R.pos) && !R.forced.has(R.pos)) { w.el.classList.remove("again"); void w.el.offsetWidth; w.el.classList.add("again"); }
+    }
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 9 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 11 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1241,7 +1259,8 @@ function onHeard(finalWords, interimWords) {
           markHelp(i); R.streak = 0;
           w.el.classList.add("fix");
           // Boekoe wijst het ene woord aan: alleen dít woord nog eens, niet de hele tekst
-          say("misread", { el: $("sayRead"), mood: "fixit", extra: `👉 „${R.words[i].clean}” (alleen dit woord)` });
+          say("misread", { el: $("sayRead"), mood: "fixit", extra: `👉 „${R.words[i].clean}” (alleen dit woord)`, silent: !VOICE_WHILE_READING });
+          nowYou(i);
         };
         R.misreadTimer = setTimeout(check, PATIENCE.misreadDelay);
       }
@@ -1254,8 +1273,8 @@ function onHeard(finalWords, interimWords) {
   else if (heardRaw.length > R.heardLen && R.ready) {
     // Kind probeert het woord (hakkelt)? Niet als het gewoon een vorig woord herhaalt (terug-lezen).
     const lastW = normalize(heardRaw[heardRaw.length - 1] || "");
-    const reread = R.expected.slice(Math.max(0, pos - 4), pos).some(e => e === lastW || similarity(e, lastW) >= 0.7);
-    if (!reread) R.tried = true;
+    const reread = R.expected.slice(Math.max(0, pos - 4), pos).some(e => e === lastW || e.includes(lastW) || similarity(e, lastW) >= 0.7);
+    if (!reread && lastW.length >= 2) R.tried = true;   // losse letters (staartje van hakken) tellen niet
   }
   R.heardLen = heardRaw.length;
   if (R.words[pos]) R.words[pos].el.classList.add("now");
@@ -1263,6 +1282,12 @@ function onHeard(finalWords, interimWords) {
   if (pos >= R.words.length) finish();
 }
 
+// Laat het woord oplichten: "nu jij!" (direct als Boekoe niet hardop praat, anders zodra de microfoon terug is)
+function nowYou(i) {
+  if (VOICE_WHILE_READING) return;
+  const w = R.words[i]; if (!w) return;
+  w.el.classList.remove("again"); void w.el.offsetWidth; w.el.classList.add("again");
+}
 function markHelp(i) {
   R.helped.add(i); R.helps[i] = (R.helps[i] || 0) + 1;
   R.helpMark = R.finalLen; R.lastHelpAt = Date.now();   // alleen wat hierna gezegd wordt telt als nieuwe poging
@@ -1274,7 +1299,14 @@ function checkStuck() {
   const i = R.pos; if (i >= R.words.length) return;
   // Geholpen, maar daarna helemaal niets meer gehoord? Dan is de microfoon waarschijnlijk weggevallen:
   // niet nog meer woorden als "hulp" markeren, maar het kind laten tikken om verder te lezen.
-  if (R.helped.has(i) && R.lastHeard < R.lastHelpAt && Date.now() - R.lastHelpAt > 7000) { askTap(); return; }
+  if (R.helped.has(i) && R.lastHeard < R.lastHelpAt) {
+    const quiet = Date.now() - R.lastHelpAt;
+    if (VOICE_WHILE_READING && R.micAliveAt <= R.lastHelpAt) { if (quiet > 7000) askTap(); return; }   // microfoon kwam niet terug: laten tikken
+    if (quiet > PATIENCE.moveOnSilent) {                  // microfoon werkt, maar kind blijft stil: samen verder
+      R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
+    }
+    return;
+  }
   if (R.stuckAt === i) {
     // Al twee keer geholpen en nog steeds stil? Dan gaan we samen verder: nooit vast blijven zitten.
     if (Date.now() - R.lastHelpAt > PATIENCE.moveOnAfter && Date.now() - R.lastHeard > PATIENCE.quietBeforeHelp) {
@@ -1286,7 +1318,8 @@ function checkStuck() {
   if (Date.now() - R.lastProgress > wait && Date.now() - R.lastHeard > PATIENCE.quietBeforeHelp) {
     R.stuckAt = i; markHelp(i); R.streak = 0;
     R.words[i].el.classList.add("help");
-    say("stuck", { el: $("sayRead"), mood: "tip", extra: syllables(R.words[i].clean, BOOK.syllables).join(" · ") });
+    say("stuck", { el: $("sayRead"), mood: "tip", extra: syllables(R.words[i].clean, BOOK.syllables).join(" · "), silent: !VOICE_WHILE_READING });
+    nowYou(i);
   }
 }
 
