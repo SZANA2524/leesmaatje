@@ -158,6 +158,7 @@ details.heard{font-size:13px;color:var(--muted)}
 details.heard summary{cursor:pointer;font-weight:800}
 details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 10px;max-height:90px;overflow:auto}
 .opt .small{font-weight:600}
+.pulse{animation:pulse 1s ease-in-out infinite alternate}@keyframes pulse{to{transform:scale(1.06);box-shadow:0 0 0 8px rgba(255,170,60,.35)}}
 </style>
 </head>
 <body>
@@ -228,7 +229,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 7</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 8</p></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -535,6 +536,7 @@ class Listener {
   continue() {
     this.active = true;
     this.paused = false;
+    this._close();            // eventueel "dode" herkenning opruimen en vers starten (binnen de tik)
     this._open();
   }
 
@@ -575,7 +577,7 @@ class Listener {
     rec.maxAlternatives = 1;
 
     rec.onstart = () => this.onState("listening");
-    rec.onaudiostart = () => this.onState("debug", "microfoon aan");
+    rec.onaudiostart = () => { this.onState("debug", "microfoon aan"); this.onState("audio"); };
     rec.onspeechstart = () => this.onState("debug", "spraak gehoord");
 
     // Elke keer de hele sessie opnieuw opbouwen: Safari stuurt resultaten soms dubbel of opnieuw.
@@ -1115,7 +1117,8 @@ function startBook(book, keepPhoto = false) {
 
 $("readBtn").onclick = () => {
   if (R.reading && R.micLost && R.listener) {         // microfoon was weggevallen: verder waar we waren
-    R.micLost = false; $("micErr").style.display = "none";
+    R.micLost = false; $("micErr").style.display = "none"; $("readBtn").classList.remove("pulse");
+    R.micAliveAt = 0; R.resumedAt = Date.now();
     R.listener.continue();
     $("readBtn").disabled = true; $("readBtn").textContent = "👂 Lees maar, ik luister!";
     R.lastProgress = Date.now(); R.lastHeard = Date.now();
@@ -1128,7 +1131,7 @@ $("readBtn").onclick = () => {
   }
   Object.assign(R, { statuses: R.expected.map(() => "pending"), pos: 0, startedAt: 0, lastProgress: Date.now(),
                      stuckAt: -1, misreadAt: -1, helped: new Set(), streak: 0, reading: true, forced: new Set(), helps: {}, helpMark: 0, lastHelpAt: 0, finalLen: 0,
-                     lastHeard: Date.now(), lastTalk: Date.now(), ready: false, micLost: false, tried: false, heardLen: 0, heardStr: "" });
+                     lastHeard: Date.now(), lastTalk: Date.now(), ready: false, micLost: false, tried: false, heardLen: 0, heardStr: "", micAliveAt: 0, resumedAt: 0 });
   R.words.forEach(w => w.el.className = "w");
   $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
 
@@ -1149,14 +1152,28 @@ $("stopBtn").onclick = () => finish();
 Player.onTalk(talking => {
   if (!R.listener || !R.reading) return;
   R.lastTalk = Date.now();
-  if (talking) R.listener.pause(); else setTimeout(() => R.reading && R.listener.resume(), IS_IOS ? 600 : 250);   // iPhone heeft even nodig om de microfoon terug te geven
+  if (talking) { R.listener.pause(); return; }
+  setTimeout(() => {
+    if (!R.reading || R.micLost || !R.listener) return;
+    R.resumedAt = Date.now(); R.listener.resume();
+    // Komt de microfoon niet terug (gebeurt op iPhone)? Dan het kind laten tikken: een tik mag hem altijd aanzetten.
+    setTimeout(() => {
+      if (R.reading && !R.micLost && !Player.playing && R.micAliveAt < R.resumedAt) askTap();
+    }, 2500);
+  }, IS_IOS ? 600 : 250);
 });
 
 const micLog = [];
+function askTap() {
+  R.micLost = true;
+  if (R.listener) R.listener.pause();
+  const b = $("readBtn"); b.disabled = false; b.textContent = "🎤 Tik en lees verder"; b.classList.add("pulse");
+}
 function onMicState(state, detail) {
+  if (state === "listening" || state === "audio") R.micAliveAt = Date.now();
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 7 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 8 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1247,6 +1264,9 @@ function markHelp(i) {
 function checkStuck() {
   if (!R.reading || !R.ready || R.micLost || Player.playing) { R.lastProgress = Math.max(R.lastProgress, Date.now() - 300); return; }
   const i = R.pos; if (i >= R.words.length) return;
+  // Geholpen, maar daarna helemaal niets meer gehoord? Dan is de microfoon waarschijnlijk weggevallen:
+  // niet nog meer woorden als "hulp" markeren, maar het kind laten tikken om verder te lezen.
+  if (R.helped.has(i) && R.lastHeard < R.lastHelpAt && Date.now() - R.lastHelpAt > 7000) { askTap(); return; }
   if (R.stuckAt === i) {
     // Al twee keer geholpen en nog steeds stil? Dan gaan we samen verder: nooit vast blijven zitten.
     if (Date.now() - R.lastHelpAt > PATIENCE.moveOnAfter && Date.now() - R.lastHeard > PATIENCE.quietBeforeHelp) {
