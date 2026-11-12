@@ -518,7 +518,7 @@ class Listener {
   /** Tijdelijk niet luisteren (bijv. terwijl Boekoe praat). */
   pause() {
     if (!this.active || this.paused) return;
-    if (IS_IOS && this.rec) { this.paused = true; this.muted = true; this.muteAt = this.sessionFinal || 0; this.interimWords = []; this.onState("paused"); return; }
+    // (Niet "doof doorluisteren" op iPhone: daar valt de microfoon stil zodra er geluid speelt.)
     this.paused = true;
     this.interimWords = [];          // wat half gehoord was, telt niet
     this._close();
@@ -551,7 +551,13 @@ class Listener {
     rec.interimResults = true;
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => this.onState("listening");
+    rec.onstart = () => { clearTimeout(this.startTimer); this.tries = 0; this.onState("listening"); };
+    // Start de herkenning niet binnen 2 seconden (gebeurt soms op iPhone na geluid)? Opnieuw proberen.
+    clearTimeout(this.startTimer);
+    this.startTimer = setTimeout(() => {
+      if (this.rec !== rec || !this.active || this.paused || (this.tries = (this.tries || 0) + 1) > 3) return;
+      this._close(); this._open();
+    }, 2000);
 
     // Elke keer de hele sessie opnieuw opbouwen: Safari stuurt resultaten soms dubbel of opnieuw.
     this.sessionCount = 0;
@@ -599,6 +605,7 @@ class Listener {
   }
 
   _close() {
+    clearTimeout(this.startTimer);
     this.prevFinal = [...this.finalWords];   // wat al gehoord is bewaren voor de volgende sessie
     this.cuts = []; this.sessionCount = 0;
     const rec = this.rec;
@@ -1115,7 +1122,7 @@ $("stopBtn").onclick = () => finish();
 Player.onTalk(talking => {
   if (!R.listener || !R.reading) return;
   R.lastTalk = Date.now();
-  if (talking) R.listener.pause(); else setTimeout(() => R.reading && R.listener.resume(), 250);
+  if (talking) R.listener.pause(); else setTimeout(() => R.reading && R.listener.resume(), IS_IOS ? 600 : 250);   // iPhone heeft even nodig om de microfoon terug te geven
 });
 
 function onMicState(state, detail) {
