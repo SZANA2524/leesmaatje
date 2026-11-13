@@ -230,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 15</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 16</p></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -793,10 +793,11 @@ async function loadLines() {
   Player.prefetch(Object.values(MOMENTS).flatMap(m => m.lines));
   return LINES;
 }
-function choose(momentId) {
+function choose(momentId, only) {
   const m = MOMENTS[momentId]; if (!m || !m.lines.length) return null;
-  const withAudio = m.lines.filter(l => l.file);
-  let pool = withAudio.length ? withAudio : m.lines;
+  const lines = only ? (m.lines.filter(l => only.includes(l.id)).length ? m.lines.filter(l => only.includes(l.id)) : m.lines) : m.lines;
+  const withAudio = lines.filter(l => l.file);
+  let pool = withAudio.length ? withAudio : lines;
   if (pool.length > 1) pool = pool.filter(l => l.id !== lastPicked[momentId]);
   const line = pool[Math.floor(Math.random() * pool.length)];
   lastPicked[momentId] = line.id;
@@ -882,7 +883,7 @@ function say(momentId, o = {}) {
     const m = MOMENTS[momentId]; if (!m || !o.el) return resolve();
     const prio = m.priority || 1;
     if (Player.playing && Player.prio > prio) return resolve();   // iets belangrijkers is bezig
-    const line = o.line || choose(momentId); if (!line) return resolve();
+    const line = o.line || choose(momentId, o.only); if (!line) return resolve();
     const key = o.el.id || "x";
     lastSaid[key] = { momentId, o: { ...o, line } };
     clearTimeout(hideTimers[key]);
@@ -1125,23 +1126,23 @@ const R = {                       // alles van de huidige leesbeurt
 // Daarom: vóór Boekoe praat de microfoon helemaal uit (wachten tot hij echt uit is), daarna weer aan.
 const VOICE_WHILE_READING = true;   // Boekoe praat overal hardop; de microfoon gaat eerst helemaal uit (zie Player.gate)
 const PATIENCE = {
-  stuckAfter: 6000,         // niets gezegd: zo lang wachten voordat Boekoe helpt
-  stuckAfterTry: 1800,      // wél geprobeerd (gehakkeld) en dan stil: sneller helpen
-  stuckAfterMisread: 8000,  // na een verbetering: nog even de kans geven
-  quietBeforeHelp: 1800,    // het kind moet ook echt even stil zijn
+  stuckAfter: 3500,         // niets gezegd: zo lang wachten voordat Boekoe helpt
+  stuckAfterTry: 1500,      // wél geprobeerd (gehakkeld) en dan stil: sneller helpen
+  stuckAfterMisread: 6000,  // na een verbetering: nog even de kans geven
+  quietBeforeHelp: 1500,    // het kind moet ook echt even stil zijn
   misreadDelay: 900,        // eerst zelf laten verbeteren voordat Boekoe iets zegt
   misreadQuiet: 1300,       // en alleen als het kind even stil is (niet midden in het lezen)
   sentencesPerCompliment: 4,
   complimentGap: 30000,     // minimaal zoveel tijd sinds Boekoe iets zei, voor een compliment
   moveOnAfter: 9000,        // na hulp nog steeds stil: dan samen verder naar het volgende woord
   moveOnSilent: 6000,       // na hulp helemaal niets meer gezegd: na zoveel ms samen verder
-  firstWord: 10000,         // bij het allereerste woord: zo lang laten beginnen
+  firstWord: 6000,          // bij het allereerste woord: zo lang laten beginnen
 };
 // iPhone (Safari) geeft woorden later door; daarom daar kortere wachttijden, anders stapelt de vertraging op
 // iPhone (Safari) geeft woorden pas na een tijdje door (soms pas als het kind even stopt). Daarom daar
 // iets meer geduld, maar dankzij "spraak gehoord" helpt Boekoe nooit terwijl het kind nog praat.
-if (IS_IOS) Object.assign(PATIENCE, { stuckAfter: 6500, stuckAfterTry: 2500, quietBeforeHelp: 2000,
-                                      misreadDelay: 900, misreadQuiet: 1500, stuckAfterMisread: 7000 });
+if (IS_IOS) Object.assign(PATIENCE, { stuckAfter: 3000, stuckAfterTry: 1300, quietBeforeHelp: 1800,
+                                      misreadDelay: 700, misreadQuiet: 1300, stuckAfterMisread: 5000 });
 
 function startBook(book, keepPhoto = false) {
   BOOK = book;
@@ -1232,6 +1233,7 @@ function onMicState(state, detail) {
   }
   if (state === "listening" || state === "audio") {
     R.micAliveAt = Date.now(); R.speaking = false;
+    if (R.reading) R.lastProgress = Math.max(R.lastProgress, Date.now());   // wachttijd begint pas als de microfoon terug is
     if (R.reading && R.ready && !R.micLost) {
       $("readBtn").textContent = "👂 Lees maar, ik luister!";
       // Net geholpen? Laat het woord even oplichten: "nu jij!"
@@ -1241,7 +1243,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 15 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 16 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1287,7 +1289,7 @@ function onHeard(finalWords, interimWords) {
       w.el.classList.add(R.helped.has(i) || s === "fixed" ? "help" : "ok");
       if (!R.startedAt) R.startedAt = Date.now();
       if (R.helped.has(i)) {             // alleen "goed zo" als Boekoe echt geholpen had
-        say("gotit", { el: $("sayRead"), mood: "good", hideAfter: 2500, silent: true });   // tijdens het lezen: alleen ballon, microfoon blijft aan
+        praise();   // hardop als het kind even pauzeert, anders alleen de ballon (niet onderbreken)   // hardop: het kind heeft het zelf verbeterd!
       } else if (/[.!?]$/.test(w.raw) && ++R.streak >= PATIENCE.sentencesPerCompliment && i < R.words.length - 1
                  && Date.now() - R.lastTalk > PATIENCE.complimentGap) {
         // compliment na een paar goede zinnen, nooit midden in een zin
@@ -1329,6 +1331,18 @@ function onHeard(finalWords, interimWords) {
   if (R.words[pos]) R.words[pos].el.classList.add("now");
   $("bar").style.width = (pos / R.words.length * 100) + "%";
   if (pos >= R.words.length) finish();
+}
+
+// "Goed zo!" nadat het kind een woord zelf verbeterde. Hardop als het kind even pauzeert;
+// leest het meteen door, dan alleen de tekstballon, zodat de microfoon aan blijft en er niets gemist wordt.
+function praise() {
+  clearTimeout(R.praiseTimer);
+  const at = Date.now();
+  R.praiseTimer = setTimeout(() => {
+    if (!R.reading) return;
+    const busy = kidSpeaking() || R.lastHeard > at || Player.playing;
+    say("gotit", { el: $("sayRead"), mood: "good", hideAfter: 2500, only: ["gotit-2"], silent: busy });
+  }, 700);
 }
 
 // Laat het woord oplichten: "nu jij!" (direct als Boekoe niet hardop praat, anders zodra de microfoon terug is)
