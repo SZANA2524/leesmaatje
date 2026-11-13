@@ -230,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 20</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 21</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -841,9 +841,29 @@ const Sound = {
   set(on) { this.on = on; try { localStorage.setItem("boekoe_sound", JSON.stringify(on)); } catch (e) {} if (!on) Player.stop(); },
 };
 
+// iPhone/iPad: Boekoe via Web Audio laten praten i.p.v. een gewoon <audio>-element. Uit echte logboeken bleek
+// dat Safari's spraakherkenning blijvend doof wordt als een <audio>-element speelt nadat de microfoon in gebruik was.
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const WA = IOS && !!(window.AudioContext || window.webkitAudioContext);
+
 const Player = {
   el: new Audio(), playing: false, prio: 0, onEnd: null, cache: {}, unlocked: false, listeners: new Set(),
+  mode: WA ? "webaudio" : "audio-element", ctx: null, buffers: {}, srcNode: null,
   init() {
+    if (WA) {
+      // Web Audio ontgrendelen bij de eerste aanraking
+      const unlockWA = () => {
+        try {
+          if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          if (this.ctx.state !== "running") this.ctx.resume();
+          const b = this.ctx.createBuffer(1, 1, 22050), n = this.ctx.createBufferSource(); n.buffer = b; n.connect(this.ctx.destination); n.start(0);
+          this.unlocked = true;
+          Object.keys(this.cache).forEach(k => this.decode(k));
+        } catch (e) {}
+      };
+      document.addEventListener("pointerdown", unlockWA, { capture: true });
+      return;
+    }
     this.el.preload = "auto"; this.el.setAttribute("playsinline", "");
     this.el.onended = () => this.finish(true);
     this.el.onerror = () => this.finish(false);
@@ -856,9 +876,18 @@ const Player = {
   /** Laat anderen (de microfoon) weten wanneer Boekoe begint en stopt met praten. */
   onTalk(fn) { this.listeners.add(fn); },
   emit(talking) { this.listeners.forEach(f => { try { f(talking); } catch (e) {} }); },
-  src(line) { return line && line.file ? "audio/boekoe/" + line.file : null; },
+  src(line) { return line && line.file ? "audio/boekoe/" + (WA ? line.file.replace(/\.webm$/, ".m4a") : line.file) : null; },
+  /** Web Audio: bestand ophalen en omzetten naar geluid dat direct kan spelen. */
+  decode(src) {
+    if (!WA || !this.ctx || this.buffers[src]) return this.buffers[src];
+    this.buffers[src] = fetch(src).then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+      .then(ab => new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej)))
+      .catch(e => { delete this.buffers[src]; throw e; });
+    return this.buffers[src];
+  },
   prefetch(lines) {
     if (location.protocol === "file:") return;   // los geopend bestand: geen vooraf laden nodig
+    if (WA) { lines.forEach(l => { const s = this.src(l); if (s) { this.cache[s] = "wa"; this.decode(s); } }); return; }
     lines.forEach(l => { const s = this.src(l); if (!s || this.cache[s]) return; this.cache[s] = "pending";
       fetch(s).then(r => r.ok ? r.blob() : Promise.reject()).then(b => { this.cache[s] = URL.createObjectURL(b); }).catch(() => { delete this.cache[s]; }); });
   },
@@ -872,6 +901,17 @@ const Player = {
     const go = () => {
       if (token !== this.token || !this.playing) return;    // intussen gestopt of iets anders gestart
       this.emit(true);                                       // pas nu: de microfoon is (via gate) al helemaal uit
+      if (WA) {
+        if (!this.ctx) { this.finish(false); return; }
+        if (this.ctx.state !== "running") this.ctx.resume();
+        Promise.resolve(this.decode(src)).then(buf => {
+          if (token !== this.token || !this.playing) return;
+          const n = this.ctx.createBufferSource(); n.buffer = buf; n.connect(this.ctx.destination);
+          n.onended = () => { if (this.srcNode === n) { this.srcNode = null; this.finish(true); } };
+          this.srcNode = n; n.start(0); if (onStart) onStart();
+        }).catch(() => this.finish(false));
+        return;
+      }
       try { this.el.src = real; this.el.currentTime = 0; const p = this.el.play(); if (onStart) onStart(); if (p && p.catch) p.catch(() => this.finish(false)); }
       catch (e) { this.finish(false); }
     };
@@ -879,7 +919,11 @@ const Player = {
     if (g && g.then) g.then(go, go); else go();
   },
   finish(ok) { if (!this.playing) return; this.playing = false; this.prio = 0; const f = this.onEnd; this.onEnd = null; if (f) f(ok); this.emit(false); },
-  stop() { try { this.el.pause(); } catch (e) {} this.finish(false); },
+  stop() {
+    if (this.srcNode) { const n = this.srcNode; this.srcNode = null; try { n.stop(); } catch (e) {} }
+    try { this.el.pause(); } catch (e) {}
+    this.finish(false);
+  },
 };
 Player.init();
 
@@ -1213,7 +1257,7 @@ $("readBtn").onclick = () => {
   $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
 
   if (!VOICE_WHILE_READING) Player.stop();               // iPhone: geen geluid terwijl de microfoon aangaat
-  LOG.length = 0; LOG_T0 = Date.now(); dlog("start lezen: " + (BOOK && BOOK.title) + " | " + navigator.userAgent);
+  LOG.length = 0; LOG_T0 = Date.now(); dlog("start lezen: " + (BOOK && BOOK.title) + " | geluid via " + Player.mode + " | " + navigator.userAgent);
   R.listener = new Listener({ onWords: onHeard, onState: onMicState });
   R.listener.start();                                   // binnen de tik starten: dan mag de microfoon aan
   // Eerst Boekoe laten uitpraten, dán pas het kind laten beginnen (anders mist hij het begin)
@@ -1228,7 +1272,7 @@ $("readBtn").onclick = () => {
 };
 $("stopBtn").onclick = () => finish();
 $("copyLog").onclick = () => {
-  const txt = "LEESMAATJE LOGBOEK (versie 20)\n" + LOG.join("\n");
+  const txt = "LEESMAATJE LOGBOEK (versie 21)\n" + LOG.join("\n");
   const out = $("logOut"); out.value = txt; out.style.display = "";
   const ok = () => { $("copyLog").textContent = "✅ Gekopieerd! Plak het in de chat"; };
   try { navigator.clipboard.writeText(txt).then(ok, () => { out.select(); document.execCommand("copy"); ok(); }); }
@@ -1281,7 +1325,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 20 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 21 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
