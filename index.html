@@ -195,10 +195,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       <div class="stars" id="stars"></div>
       <p class="muted small" id="starsTxt" style="margin-top:-8px"></p>
       <div style="flex:1"></div>
-      <label class="filelabel" style="width:100%">
-        <input type="file" accept="image/*" capture="environment" id="photo">
-        <span class="btn big" style="display:block">📷 Maak een foto van je bladzijde</span>
-      </label>
+      <button class="btn big" id="scanBtn" style="width:100%">📖 Lees je eigen boek</button>
       <button class="btn ghost" id="chooseStory" style="width:100%">📚 Kies een verhaaltje</button>
     </section>
 
@@ -209,6 +206,29 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       <details class="cat"><summary><span>✍️ Zelf een tekst plakken</span></summary>
         <div class="cat-body"><textarea id="ownText" rows="5" placeholder="Plak of typ hier een stukje tekst…" style="width:100%;border:2px solid var(--line);border-radius:14px;padding:10px;font:inherit"></textarea>
         <button class="btn" id="useOwnText">Deze tekst lezen</button></div></details>
+    </section>
+
+    <!-- 2c. BLADZIJDE SCANNEN (Livetekst van de iPhone zelf) -->
+    <section class="screen" id="s-scan">
+      <h1>📖 Scan je bladzijde</h1>
+      <div class="card" style="display:grid;gap:8px" id="scanHowIos">
+        <b>Zo laat je de iPhone de tekst lezen:</b>
+        <ol class="small" style="margin:0;padding-left:20px;display:grid;gap:6px">
+          <li>Tik in het witte vak hieronder.</li>
+          <li>Tik er nóg een keer in en kies <b>Tekst scannen</b>. Of tik op het scan-icoontje <b>⌸</b> boven of in je toetsenbord.</li>
+          <li>Richt de camera op de bladzijde. Zie je gele randjes om de tekst? Tik op <b>Zet in</b>.</li>
+        </ol>
+        <p class="small muted">Tip: een hele bladzijde in één keer lukt het best als het boek plat ligt en er genoeg licht is.</p>
+      </div>
+      <div class="card" style="display:none;gap:8px" id="scanHowOther">
+        <b>Plak hier de tekst van je bladzijde.</b>
+        <p class="small muted">Op Android kun je met de camera of Google Lens tekst kopiëren. Je kunt ook een foto laten lezen (werkt alleen goed met een platte, rechte bladzijde).</p>
+        <label class="filelabel"><input type="file" accept="image/*" capture="environment" id="photo"><span class="btn ghost" style="display:block">📷 Foto laten lezen</span></label>
+      </div>
+      <textarea id="scanText" rows="9" placeholder="Tik hier en kies Tekst scannen…" autocapitalize="sentences" spellcheck="false"
+        style="width:100%;border:3px dashed var(--line);border-radius:16px;padding:12px;font:inherit;font-size:17px;background:#fff"></textarea>
+      <p class="small muted" id="scanCount"></p>
+      <button class="btn big" id="scanGo" disabled>📚 Deze bladzijde lezen</button>
     </section>
 
     <!-- 3. LEZEN -->
@@ -231,7 +251,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open style="display:none"><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 24</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
+      <details class="heard" id="heardBox" open style="display:none"><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 25</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -1091,14 +1111,16 @@ async function preprocess(file, max = 1800) {
  * paginanummers en rommel eruit, afgebroken woorden weer heel, regels aan elkaar.
  * @param {{text:string, confidence:number}[]} lines
  */
-function cleanOcr(lines) {
+function cleanOcr(lines, { strict = false } = {}) {
   const keep = [];
   for (const l of lines || []) {
     const t = String(l.text || "").replace(/\s+/g, " ").trim();
     if (!t) continue;
     const letters = (t.match(/\p{L}/gu) || []).length, chars = t.replace(/\s/g, "").length;
-    if (letters < 2 || letters / chars < 0.6) continue;              // paginanummer, streepjes, rommel
-    if ((l.confidence ?? 100) < 45) continue;                        // te onzeker (bijv. tekst in een plaatje)
+    if (letters < 1) continue;                                       // alleen een paginanummer of streepjes
+    // Alleen bij de gratis foto-herkenner (strict): rommel en onzekere stukjes eruit. Niet bij gescande/geplakte tekst:
+    // die is betrouwbaar, en korte regels als "'Ja!'" moeten blijven.
+    if (strict && (letters < 2 || letters / chars < 0.6 || (l.confidence ?? 100) < 45)) continue;
     keep.push(t);
   }
   let text = keep.join("\n")
@@ -1108,7 +1130,11 @@ function cleanOcr(lines) {
     .replace(/\s+([.,!?;:])/g, "$1")
     .replace(/\s+/g, " ").trim();
   text = text.split(" ").filter(w => /\p{L}|\d/u.test(w)).join(" ");
-  return text.slice(0, 1500);
+  if (text.length > 3000) {                                         // te lang: netjes na een hele zin afknippen
+    const cut = text.slice(0, 3000), end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+    text = end > 1000 ? cut.slice(0, end + 1) : cut.slice(0, cut.lastIndexOf(" "));
+  }
+  return text;
 }
 
 async function readOnDevice(file, onProgress) {
@@ -1122,7 +1148,7 @@ async function readOnDevice(file, onProgress) {
     const { data } = await worker.recognize(canvas);
     const lines = (data.lines && data.lines.length) ? data.lines.map(l => ({ text: l.text, confidence: l.confidence }))
       : String(data.text || "").split("\n").map(t => ({ text: t, confidence: data.confidence }));
-    const text = cleanOcr(lines);
+    const text = cleanOcr(lines, { strict: true });
     if (text.split(" ").length < 3) throw { code: "no_text" };
     return { text, syllables: {}, quiz: null };
   } finally { try { await worker.terminate(); } catch (e) {} }
@@ -1186,12 +1212,12 @@ const sessions = LS.get("lm_sessions", []);           // [{date, title, wpm, acc
 const childName = () => (profile && profile.name) || "jij";
 
 /* ================= Navigatie ================= */
-const screens = ["s-onboard", "s-home", "s-stories", "s-read", "s-done", "s-parent"];
+const screens = ["s-onboard", "s-home", "s-stories", "s-scan", "s-read", "s-done", "s-parent"];
 let homeIdle = null;
 function go(id) {
   screens.forEach(s => $(s).classList.toggle("active", s === id));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on",
-    t.dataset.go === id || (["s-read", "s-done", "s-stories"].includes(id) && t.dataset.go === "s-home")));
+    t.dataset.go === id || (["s-read", "s-done", "s-stories", "s-scan"].includes(id) && t.dataset.go === "s-home")));
   $("who").textContent = ["s-parent", "s-onboard"].includes(id) ? "Ouder" : "Kind";
   clearTimeout(homeIdle);
   if (id !== "s-read") stopReading(false);
@@ -1280,6 +1306,23 @@ async function onPhoto(file) {
     showOcr("error", msg, sub);
   }
 }
+/* ---------- Eigen boek: tekst scannen met de iPhone (Livetekst) of plakken ---------- */
+$("scanBtn").onclick = () => {
+  $("scanHowIos").style.display = IS_IOS ? "grid" : "none";
+  $("scanHowOther").style.display = IS_IOS ? "none" : "grid";
+  $("scanText").value = ""; updateScan();
+  go("s-scan");
+};
+function updateScan() {
+  const t = cleanOcr($("scanText").value.split(/\n/).map(text => ({ text })));
+  const n = t ? t.split(" ").length : 0;
+  $("scanCount").textContent = n ? `${n} woorden gevonden` : "";
+  $("scanGo").disabled = n < 3;
+  return t;
+}
+$("scanText").oninput = updateScan;
+$("scanGo").onclick = () => { const t = updateScan(); if (t.split(" ").length >= 3) startBook({ title: "Mijn boek", text: t, syllables: {}, quiz: null }); };
+
 $("photo").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) onPhoto(f); };
 $("photo2").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) onPhoto(f); };
 $("ocrStories").onclick = () => go("s-stories");
@@ -1374,7 +1417,7 @@ $("readBtn").onclick = () => {
 };
 $("stopBtn").onclick = () => finish();
 $("copyLog").onclick = () => {
-  const txt = "LEESMAATJE LOGBOEK (versie 24)\n" + LOG.join("\n");
+  const txt = "LEESMAATJE LOGBOEK (versie 25)\n" + LOG.join("\n");
   const out = $("logOut"); out.value = txt; out.style.display = "";
   const ok = () => { $("copyLog").textContent = "✅ Gekopieerd! Plak het in de chat"; };
   try { navigator.clipboard.writeText(txt).then(ok, () => { out.select(); document.execCommand("copy"); ok(); }); }
@@ -1428,7 +1471,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 24 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 25 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
