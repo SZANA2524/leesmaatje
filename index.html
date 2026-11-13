@@ -190,6 +190,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       <div style="height:4px"></div>
       <div class="bubble" id="sayHome"><span class="say-text">Hoi!</span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <button class="mascot-btn" id="mascotBtn" aria-label="Boekoe"></button>
+      <button class="btn big pulse" id="wake" style="display:none">👋 Tik om Boekoe wakker te maken</button>
       <button class="psst" id="psstBtn">🤫 Pssst… Boekoe vertelt</button>
       <div class="stars" id="stars"></div>
       <p class="muted small" id="starsTxt" style="margin-top:-8px"></p>
@@ -230,7 +231,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 22</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 23</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -849,7 +850,14 @@ const WA = IOS && !!(window.AudioContext || window.webkitAudioContext);
 const Player = {
   el: new Audio(), playing: false, prio: 0, onEnd: null, cache: {}, unlocked: false, listeners: new Set(),
   mode: WA ? "webaudio" : "audio-element", ctx: null, buffers: {}, srcNode: null,
+  // Pas Web Audio gebruiken als de microfoon al aan is geweest. Daarvoor: gewoon <audio>
+  // (Web Audio wordt op iPhone anders stilgezet door de stil-schakelaar).
+  micUsed: false,
+  useWA() { return WA && this.micUsed; },
   init() {
+    this.el.preload = "auto"; this.el.setAttribute("playsinline", "");
+    this.el.onended = () => this.finish(true);
+    this.el.onerror = () => this.finish(false);
     if (WA) {
       // Web Audio ontgrendelen bij de eerste aanraking
       const unlockWA = () => {
@@ -857,26 +865,24 @@ const Player = {
           if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
           if (this.ctx.state !== "running") this.ctx.resume();
           const b = this.ctx.createBuffer(1, 1, 22050), n = this.ctx.createBufferSource(); n.buffer = b; n.connect(this.ctx.destination); n.start(0);
-          this.unlocked = true;
-          Object.keys(this.cache).forEach(k => this.decode(k));
+          this.waUnlocked = true;
+          (this.waLines || []).forEach(l => { const s = this.src(l); if (s) this.decode(this.waSrc(s)); });
         } catch (e) {}
       };
       document.addEventListener("pointerdown", unlockWA, { capture: true });
-      return;
     }
-    this.el.preload = "auto"; this.el.setAttribute("playsinline", "");
-    this.el.onended = () => this.finish(true);
-    this.el.onerror = () => this.finish(false);
     // iPhone: geluid 'ontgrendelen' bij de eerste aanraking
     const unlock = () => { if (this.unlocked) return; this.unlocked = true;
       try { this.el.src = SILENT; const p = this.el.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} };
     document.addEventListener("pointerdown", unlock, { once: true, capture: true });
+    document.addEventListener("pointerdown", () => { this.everTapped = true; }, { once: true, capture: true });
     document.addEventListener("keydown", unlock, { once: true, capture: true });
   },
   /** Laat anderen (de microfoon) weten wanneer Boekoe begint en stopt met praten. */
   onTalk(fn) { this.listeners.add(fn); },
   emit(talking) { this.listeners.forEach(f => { try { f(talking); } catch (e) {} }); },
-  src(line) { return line && line.file ? "audio/boekoe/" + (WA ? line.file.replace(/\.webm$/, ".m4a") : line.file) : null; },
+  src(line) { return line && line.file ? "audio/boekoe/" + line.file : null; },
+  waSrc(src) { return src.replace(/\.webm$/, ".m4a"); },
   /** Web Audio: bestand ophalen en omzetten naar geluid dat direct kan spelen. */
   decode(src) {
     if (!WA || !this.ctx || this.buffers[src]) return this.buffers[src];
@@ -887,7 +893,7 @@ const Player = {
   },
   prefetch(lines) {
     if (location.protocol === "file:") return;   // los geopend bestand: geen vooraf laden nodig
-    if (WA) { lines.forEach(l => { const s = this.src(l); if (s) { this.cache[s] = "wa"; this.decode(s); } }); return; }
+    if (WA) { this.waLines = lines; }
     lines.forEach(l => { const s = this.src(l); if (!s || this.cache[s]) return; this.cache[s] = "pending";
       fetch(s).then(r => r.ok ? r.blob() : Promise.reject()).then(b => { this.cache[s] = URL.createObjectURL(b); }).catch(() => { delete this.cache[s]; }); });
   },
@@ -901,10 +907,9 @@ const Player = {
     const go = () => {
       if (token !== this.token || !this.playing) return;    // intussen gestopt of iets anders gestart
       this.emit(true);                                       // pas nu: de microfoon is (via gate) al helemaal uit
-      if (WA) {
-        if (!this.ctx) { this.finish(false); return; }
+      if (this.useWA() && this.ctx) {
         if (this.ctx.state !== "running") this.ctx.resume();
-        Promise.resolve(this.decode(src)).then(buf => {
+        Promise.resolve(this.decode(this.waSrc(src))).then(buf => {
           if (token !== this.token || !this.playing) return;
           const n = this.ctx.createBufferSource(); n.buffer = buf; n.connect(this.ctx.destination);
           n.onended = () => { if (this.srcNode === n) { this.srcNode = null; this.finish(true); } };
@@ -1129,7 +1134,11 @@ function enterHome() {
   if (!LS.get("lm_met", false)) { moment = "welcome_first"; LS.set("lm_met", true); LS.set("lm_day", today); }
   else if (LS.get("lm_day", "") !== today) { moment = h < 12 ? "greet_morning" : h < 18 ? "greet_afternoon" : "greet_evening"; LS.set("lm_day", today); }
   else moment = "welcome_back";
-  setTimeout(() => say(moment, { el: $("sayHome"), face: $("mascotBtn") }), 250);
+  const greet = () => say(moment, { el: $("sayHome"), face: $("mascotBtn") });
+  if (!Player.everTapped) {                         // geen tik gehad: browsers laten Boekoe dan nog niet praten
+    $("wake").style.display = ""; $("sayHome").classList.add("hidden");
+    $("wake").onclick = () => { $("wake").style.display = "none"; $("sayHome").classList.remove("hidden"); greet(); };
+  } else setTimeout(greet, 250);
   homeIdle = setTimeout(() => { if ($("s-home").classList.contains("active")) say("instr_photo", { el: $("sayHome"), face: $("mascotBtn") }); }, 12000);
   // sterren: leesbeurten deze week
   const weekAgo = Date.now() - 7 * 864e5, n = sessions.filter(s => s.date > weekAgo).length, shown = Math.min(n, 5);
@@ -1257,12 +1266,14 @@ $("readBtn").onclick = () => {
   $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
 
   if (!VOICE_WHILE_READING) Player.stop();               // iPhone: geen geluid terwijl de microfoon aangaat
-  LOG.length = 0; LOG_T0 = Date.now(); dlog("start lezen: " + (BOOK && BOOK.title) + " | geluid via " + Player.mode + " | " + navigator.userAgent);
+  LOG.length = 0; LOG_T0 = Date.now(); dlog("start lezen: " + (BOOK && BOOK.title) + " | geluid tijdens lezen via " + Player.mode + " | " + navigator.userAgent);
   R.listener = new Listener({ onWords: onHeard, onState: onMicState });
-  R.listener.start();                                   // binnen de tik starten: dan mag de microfoon aan
+  // Eerst Boekoe's uitleg (met de gewone manier van afspelen, goed hoorbaar), pas daarna de microfoon aan.
   // Eerst Boekoe laten uitpraten, dán pas het kind laten beginnen (anders mist hij het begin)
   say("instr_read", { el: $("sayRead"), hideAfter: VOICE_WHILE_READING ? 1500 : 3500, silent: !VOICE_WHILE_READING }).then(() => {
     if (!R.reading) return;
+    Player.micUsed = true;                              // vanaf nu praat Boekoe via Web Audio (Safari blijft dan horen)
+    R.listener.start(); dlog("mic aan na uitleg");
     R.ready = true; R.lastProgress = Date.now(); R.lastHeard = Date.now();
     if (R.words[R.pos]) R.words[R.pos].el.classList.add("now");
     // Pas "ik luister" tonen als de microfoon ook echt weer aan staat (anders mist hij het eerste woord)
@@ -1272,7 +1283,7 @@ $("readBtn").onclick = () => {
 };
 $("stopBtn").onclick = () => finish();
 $("copyLog").onclick = () => {
-  const txt = "LEESMAATJE LOGBOEK (versie 22)\n" + LOG.join("\n");
+  const txt = "LEESMAATJE LOGBOEK (versie 23)\n" + LOG.join("\n");
   const out = $("logOut"); out.value = txt; out.style.display = "";
   const ok = () => { $("copyLog").textContent = "✅ Gekopieerd! Plak het in de chat"; };
   try { navigator.clipboard.writeText(txt).then(ok, () => { out.select(); document.execCommand("copy"); ok(); }); }
@@ -1292,6 +1303,7 @@ Player.onTalk(talking => {
   if (talking) { R.listener.pause(); $("readBtn").textContent = "🤫 Boekoe praat… even wachten"; return; }
   setTimeout(() => {
     if (!R.reading || R.micLost || !R.listener || Player.playing) return;   // praat Boekoe alweer? dan niet aanzetten
+    if (!R.listener.active || !R.listener.paused) return;                  // stond niet uit (bijv. uitleg vóór de mic): niets te doen
     R.resumedAt = Date.now(); dlog("mic weer aan"); R.listener.resume();
     // Komt de microfoon niet terug (gebeurt op iPhone)? Dan het kind laten tikken: een tik mag hem altijd aanzetten.
     setTimeout(() => {
@@ -1325,7 +1337,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 22 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 23 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1435,7 +1447,8 @@ function praise() {
     // Altijd hardop (kort zinnetje). Praat Boekoe op dat moment al? Dan alleen de ballon, niet onderbreken.
     const busy = Player.playing;
     dlog("ZEGT: goed zo" + (busy ? " (alleen tekst, Boekoe praatte al)" : " (hardop)"));
-    say("gotit", { el: $("sayRead"), mood: "good", hideAfter: 2500, only: ["gotit-2"], silent: busy });
+    // afwisselen: "goed gezien" of een ander compliment
+    say(Math.random() < 0.5 ? "gotit" : "compliment", { el: $("sayRead"), mood: "good", hideAfter: 2500, silent: busy });
   }, 250);
 }
 
