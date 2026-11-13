@@ -230,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 17</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 18</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -574,9 +574,10 @@ class Listener {
         this.cuts = []; this.sessionCount = 0;
         resolve();
       };
-      const timer = setTimeout(() => { try { rec.abort(); } catch (e) {} done(); }, 3000);   // Safari te traag: dan toch stoppen
+      const timer = setTimeout(() => { this.onState("debug", "afronden duurde te lang -> afgekapt"); try { rec.abort(); } catch (e) {} done(); }, 3000);   // Safari te traag: dan toch stoppen
       rec.onerror = null;
       rec.onend = () => { this.onState("debug", "uit (Boekoe praat)"); done(); };
+      this.onState("debug", "mic netjes afronden");
       try { rec.stop(); } catch (e) { done(); }
     });
     return this.haltP;
@@ -1018,6 +1019,10 @@ async function readPhoto(file) {
  */
 
 const $ = id => document.getElementById(id);
+/* ---------- Logboek (om problemen op echte toestellen te kunnen zien) ---------- */
+const LOG = []; let LOG_T0 = Date.now();
+function dlog(msg) { LOG.push(((Date.now() - LOG_T0) / 1000).toFixed(1) + "s " + msg); if (LOG.length > 600) LOG.shift(); }
+window.dlog = dlog;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const LS = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -1197,6 +1202,7 @@ $("readBtn").onclick = () => {
   $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
 
   if (!VOICE_WHILE_READING) Player.stop();               // iPhone: geen geluid terwijl de microfoon aangaat
+  LOG.length = 0; LOG_T0 = Date.now(); dlog("start lezen: " + (BOOK && BOOK.title) + " | " + navigator.userAgent);
   R.listener = new Listener({ onWords: onHeard, onState: onMicState });
   R.listener.start();                                   // binnen de tik starten: dan mag de microfoon aan
   // Eerst Boekoe laten uitpraten, dán pas het kind laten beginnen (anders mist hij het begin)
@@ -1210,6 +1216,13 @@ $("readBtn").onclick = () => {
   R.timer = setInterval(checkStuck, 300);
 };
 $("stopBtn").onclick = () => finish();
+$("copyLog").onclick = () => {
+  const txt = "LEESMAATJE LOGBOEK (versie 18)\n" + LOG.join("\n");
+  const out = $("logOut"); out.value = txt; out.style.display = "";
+  const ok = () => { $("copyLog").textContent = "✅ Gekopieerd! Plak het in de chat"; };
+  try { navigator.clipboard.writeText(txt).then(ok, () => { out.select(); document.execCommand("copy"); ok(); }); }
+  catch (e) { out.select(); try { document.execCommand("copy"); ok(); } catch (e2) {} }
+};
 
 // Boekoe praat -> microfoon even uit, zodat de app Boekoe niet "hoort"
 Player.gate = () => {
@@ -1217,13 +1230,14 @@ Player.gate = () => {
   return R.listener.halt().then(() => new Promise(r => setTimeout(r, IS_IOS ? 250 : 0)));   // iPhone: even tijd om naar luidspreker te schakelen
 };
 Player.onTalk(talking => {
+  dlog(talking ? "BOEKOE praat" : "Boekoe klaar");
   if (!R.listener || !R.reading) return;
   R.lastTalk = Date.now();
   if (!VOICE_WHILE_READING) return;
   if (talking) { R.listener.pause(); $("readBtn").textContent = "🤫 Boekoe praat… even wachten"; return; }
   setTimeout(() => {
     if (!R.reading || R.micLost || !R.listener || Player.playing) return;   // praat Boekoe alweer? dan niet aanzetten
-    R.resumedAt = Date.now(); R.listener.resume();
+    R.resumedAt = Date.now(); dlog("mic weer aan"); R.listener.resume();
     // Komt de microfoon niet terug (gebeurt op iPhone)? Dan het kind laten tikken: een tik mag hem altijd aanzetten.
     setTimeout(() => {
       if (R.reading && !R.micLost && !Player.playing && R.micAliveAt < R.resumedAt) askTap();
@@ -1233,11 +1247,13 @@ Player.onTalk(talking => {
 
 const micLog = [];
 function askTap() {
+  dlog("TIK-KNOP getoond");
   R.micLost = true;
   if (R.listener) R.listener.pause();
   const b = $("readBtn"); b.disabled = false; b.textContent = "🎤 Tik en lees verder"; b.classList.add("pulse");
 }
 function onMicState(state, detail) {
+  dlog("mic: " + state + (detail !== undefined && detail !== "" ? " " + detail : ""));
   if (state === "speech") {               // Safari meldt meteen dat er gesproken wordt, de woorden komen later
     R.speaking = !!detail; R.speechAt = Date.now(); R.lastHeard = Date.now();
     return;
@@ -1254,7 +1270,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 17 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 18 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1276,6 +1292,7 @@ function onHeard(finalWords, interimWords) {
   if (!R.reading) return;
   const heardRaw = [...finalWords, ...interimWords];
   const heardStr = heardRaw.join(" ");
+  if (heardStr !== R.heardStr) dlog("hoort: [" + finalWords.slice(-6).join(" ") + "] + (" + interimWords.join(" ") + ")");
   if (heardStr !== R.heardStr) { R.lastHeard = Date.now(); R.heardStr = heardStr; }   // alleen nieuwe woorden tellen als "praten"
   $("heardTxt").textContent = heardRaw.join(" ") || "…";
   // Voortgang mag op de voorlopige gok, maar een FOUT alleen op wat definitief gehoord is
@@ -1320,6 +1337,7 @@ function onHeard(finalWords, interimWords) {
             markHelp(i); R.streak = 0;
             w.el.classList.add("fix");
             // Boekoe wijst het ene woord aan: alleen dít woord nog eens, niet de hele tekst
+            dlog("ZEGT: fout woord " + R.words[i].raw);
             say("misread", { el: $("sayRead"), mood: "fixit", extra: `👉 „${R.words[i].clean}” (alleen dit woord)`, silent: !VOICE_WHILE_READING });
             nowYou(i);
           });
@@ -1332,6 +1350,7 @@ function onHeard(finalWords, interimWords) {
   });
 
   if (pos !== R.pos) {
+    dlog("wijzer " + R.pos + "->" + pos + " (" + (R.words[pos] ? R.words[pos].raw : "einde") + ")");
     // Kwam er in één keer een heel stuk zin binnen? Dan leest het kind vlot en stuurt Safari per zin door:
     // de volgende zin is waarschijnlijk al onderweg, dus dan niet meteen "checken".
     R.burst = pos - R.pos >= 3;
@@ -1359,6 +1378,7 @@ function praise() {
   R.praiseTimer = setTimeout(() => {
     if (!R.reading) return;
     const busy = kidSpeaking() || R.lastHeard > at || Player.playing;
+    dlog("ZEGT: goed zo" + (busy ? " (alleen tekst)" : " (hardop)"));
     say("gotit", { el: $("sayRead"), mood: "good", hideAfter: 2500, only: ["gotit-2"], silent: busy });
   }, 700);
 }
@@ -1389,14 +1409,14 @@ function checkStuck() {
     const quiet = Date.now() - R.lastHelpAt;
     if (VOICE_WHILE_READING && R.micAliveAt <= R.lastHelpAt) { if (quiet > 7000) askTap(); return; }   // microfoon kwam niet terug: laten tikken
     if (quiet > PATIENCE.moveOnSilent) {                  // microfoon werkt, maar kind blijft stil: samen verder
-      R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
+      dlog("samen verder na stilte bij " + R.words[i].raw); R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
     }
     return;
   }
   if (R.stuckAt === i) {
     // Al twee keer geholpen en nog steeds stil? Dan gaan we samen verder: nooit vast blijven zitten.
     if (Date.now() - R.lastHelpAt > PATIENCE.moveOnAfter && Date.now() - R.lastHeard > PATIENCE.quietBeforeHelp) {
-      R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
+      dlog("samen verder na stilte bij " + R.words[i].raw); R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
     }
     return;
   }
@@ -1407,6 +1427,7 @@ function checkStuck() {
     helpAfterMic(i, () => true, () => {
     R.stuckAt = i; markHelp(i); R.streak = 0;
     R.words[i].el.classList.add("help");
+    dlog("ZEGT: lastig woord " + R.words[i].raw);
     say("stuck", { el: $("sayRead"), mood: "tip", extra: syllables(R.words[i].clean, BOOK.syllables).join(" · ").replace(/^./, c => /[A-Z]/.test(R.words[i].raw[0]) ? c.toUpperCase() : c), silent: !VOICE_WHILE_READING });
     nowYou(i);
     });
@@ -1420,10 +1441,12 @@ function checkStuck() {
 function helpAfterMic(i, stillNeeded, doHelp) {
   if (R.helping) return;
   R.helping = true;
+  dlog("check hulp bij woord " + i + " (" + R.words[i].raw + "), stil sinds " + (Date.now() - R.lastHeard) + "ms, geen voortgang sinds " + (Date.now() - R.lastProgress) + "ms");
   const L = R.listener;
   (L ? L.halt() : Promise.resolve()).then(() => {
     R.helping = false;
     if (!R.reading) return;
+    dlog("check klaar: wijzer=" + R.pos + " status=" + R.statuses[i] + (R.pos !== i || !stillNeeded() ? " -> niet nodig" : " -> HELPEN"));
     if (R.pos !== i || !stillNeeded()) {             // het kind was al verder: niets zeggen, gewoon weer luisteren
       R.lastProgress = Date.now();
       if (R.listener && !Player.playing) R.listener.resume();
