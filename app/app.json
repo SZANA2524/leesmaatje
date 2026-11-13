@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Leesmaatje",
+    "slug": "leesmaatje",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FFF8EE",
+    "ios": {
+      "bundleIdentifier": "nl.leesmaatje.boekoe",
+      "supportsTablet": true,
+      "infoPlist": { "ITSAppUsesNonExemptEncryption": false }
+    },
+    "android": {
+      "package": "nl.leesmaatje.boekoe",
+      "permissions": ["android.permission.RECORD_AUDIO", "android.permission.CAMERA"]
+    },
+    "plugins": [
+      ["expo-speech-recognition", {
+        "microphonePermission": "Boekoe luistert mee terwijl je voorleest.",
+        "speechRecognitionPermission": "Boekoe herkent de woorden die je voorleest.",
+        "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+      }],
+      ["expo-image-picker", {
+        "cameraPermission": "Maak een foto van de bladzijde, dan leest Boekoe de tekst.",
+        "photosPermission": "Kies een foto van een bladzijde, dan leest Boekoe de tekst."
+      }],
+      ["expo-audio", { "microphonePermission": "Boekoe luistert mee terwijl je voorleest." }]
+    ]
+  }
+}
