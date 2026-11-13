@@ -230,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 18</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 19</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -577,8 +577,11 @@ class Listener {
       const timer = setTimeout(() => { this.onState("debug", "afronden duurde te lang -> afgekapt"); try { rec.abort(); } catch (e) {} done(); }, 3000);   // Safari te traag: dan toch stoppen
       rec.onerror = null;
       rec.onend = () => { this.onState("debug", "uit (Boekoe praat)"); done(); };
-      this.onState("debug", "mic netjes afronden");
-      try { rec.stop(); } catch (e) { done(); }
+      // Net gestart (nog niets gehoord)? Dan gewoon afbreken: stop() op een net gestarte beurt
+      // kan Safari in de war brengen. Liep hij al een tijdje? Dan netjes afronden (laatste woorden komen dan nog door).
+      const young = !this.recStartedAt || Date.now() - this.recStartedAt < 1500 || !this.heardThisSession;
+      this.onState("debug", young ? "mic afbreken (net gestart)" : "mic netjes afronden");
+      try { young ? rec.abort() : rec.stop(); } catch (e) { done(); }
     });
     return this.haltP;
   }
@@ -619,7 +622,8 @@ class Listener {
     rec.interimResults = true;
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => this.onState("listening");
+    this.recStartedAt = 0; this.heardThisSession = false;
+    rec.onstart = () => { this.recStartedAt = Date.now(); this.onState("listening"); };
     rec.onaudiostart = () => { this.onState("debug", "microfoon aan"); this.onState("audio"); };
     rec.onspeechstart = () => { this.onState("debug", "spraak gehoord"); this.onState("speech", true); };
     rec.onspeechend = () => { this.onState("debug", "spraak stopt"); this.onState("speech", false); };
@@ -634,6 +638,7 @@ class Listener {
         for (const w of res[0].transcript.trim().split(/\s+/).filter(Boolean)) all.push({ w, fin: res.isFinal });
       }
       this.sessionCount = all.length;
+      if (all.length) this.heardThisSession = true;
       this.sessionFinal = all.filter(x => x.fin).length;
       if (this.paused && !this.halting) return;   // tijdens netjes afronden: woorden tellen nog mee
       // Woorden die binnenkwamen terwijl Boekoe praatte (iPhone) tellen niet mee
@@ -1217,7 +1222,7 @@ $("readBtn").onclick = () => {
 };
 $("stopBtn").onclick = () => finish();
 $("copyLog").onclick = () => {
-  const txt = "LEESMAATJE LOGBOEK (versie 18)\n" + LOG.join("\n");
+  const txt = "LEESMAATJE LOGBOEK (versie 19)\n" + LOG.join("\n");
   const out = $("logOut"); out.value = txt; out.style.display = "";
   const ok = () => { $("copyLog").textContent = "✅ Gekopieerd! Plak het in de chat"; };
   try { navigator.clipboard.writeText(txt).then(ok, () => { out.select(); document.execCommand("copy"); ok(); }); }
@@ -1270,7 +1275,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 18 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 19 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
