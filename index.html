@@ -231,7 +231,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 23</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
+      <details class="heard" id="heardBox" open style="display:none"><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 24</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -276,6 +276,10 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
         <b>Oefent nog met</b>
         <div class="chips" id="hardWords"></div>
       </div>
+      <div class="card" style="display:grid;gap:8px">
+        <label class="row" style="gap:10px;align-items:center"><input type="checkbox" id="dbgToggle" style="width:22px;height:22px"> <b>Luister-details tonen</b></label>
+        <p class="small muted">Laat tijdens het lezen zien wat Boekoe hoort, met een knop om het logboek te kopiëren. Handig als er iets niet goed gaat; voor kinderen staat dit uit.</p>
+      </div>
       <div class="card" style="background:var(--teal-l);border-color:transparent">
         <b>💡 Tip</b>
         <p class="small" style="margin-top:6px">Korte leesmomenten van 5 à 10 minuten werken het best. Lees de lastige woorden uit de schatkist samen nog eens, bijvoorbeeld aan tafel.</p>
@@ -311,6 +315,17 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
 
 const NUMBERS = { 0:"nul",1:"een",2:"twee",3:"drie",4:"vier",5:"vijf",6:"zes",7:"zeven",8:"acht",9:"negen",10:"tien",
   11:"elf",12:"twaalf",13:"dertien",14:"veertien",15:"vijftien",16:"zestien",17:"zeventien",18:"achttien",19:"negentien",20:"twintig" };
+
+/**
+ * Safari schrijft opgelezen getallen soms als cijfers aan elkaar: "drie, twee, een" wordt "321".
+ * Getallen boven de 20 die we niet als woord kennen splitsen we daarom in losse cijfers.
+ */
+function splitDigits(tokens) {
+  return tokens.flatMap(t => {
+    const d = String(t).replace(/[^0-9]/g, "");
+    return /^\d{2,6}$/.test(d) && d === String(t).replace(/[.,!?:;]/g, "") && !NUMBERS[+d] ? [...d] : [t];
+  });
+}
 
 /** Maak een woord vergelijkbaar: kleine letters, geen leestekens of accenten, een paar Nederlandse klanken gelijkgetrokken. */
 function normalize(word) {
@@ -479,7 +494,7 @@ function isAttempt(fresh, exp, helps = 1) {
 
 /** Handig: van gewone tekst naar gealigneerde status, voor tests en debuggen. */
 function alignText(expectedText, heardText) {
-  return align(tokenize(expectedText).map(normalize), tokenize(heardText).map(normalize));
+  return align(tokenize(expectedText).map(normalize), splitDigits(tokenize(heardText)).map(normalize));
 }
 
 /** Simpele lettergrepen-splitsing voor de "in stukjes"-hulp (benadering). */
@@ -1039,17 +1054,93 @@ async function toJpegBase64(file, max = 1600) {
   return { image: btoa(bin), mediaType: blob.type === "image/png" ? "image/png" : "image/jpeg" };
 }
 
+/* ================= Tekst lezen op het toestel zelf (gratis, zonder server) ================= */
+// Tesseract.js (open-source tekstherkenning) met Nederlands. Wordt pas geladen als iemand een foto maakt.
+const TESS_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  return new Promise((res, rej) => {
+    const sc = document.createElement("script"); sc.src = TESS_URL; sc.async = true;
+    sc.onload = () => window.Tesseract ? res(window.Tesseract) : rej(new Error("geen Tesseract"));
+    sc.onerror = () => rej(new Error("laden mislukt"));
+    document.head.append(sc);
+  });
+}
+
+/** Foto klaarmaken voor herkenning: verkleinen, grijs, contrast oprekken (helpt bij schaduw en slecht licht). */
+async function preprocess(file, max = 1800) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(bmp, 0, 0, c.width, c.height);
+  const im = g.getImageData(0, 0, c.width, c.height), d = im.data, hist = new Array(256).fill(0);
+  for (let i = 0; i < d.length; i += 4) { const v = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0; d[i] = v; hist[v]++; }
+  const n = d.length / 4; let lo = 0, hi = 255, acc = 0;
+  while (lo < 255 && (acc += hist[lo]) < n * 0.01) lo++;
+  acc = 0; while (hi > 0 && (acc += hist[hi]) < n * 0.01) hi--;
+  const span = Math.max(1, hi - lo);
+  for (let i = 0; i < d.length; i += 4) { const v = Math.max(0, Math.min(255, (d[i] - lo) * 255 / span)); d[i] = d[i + 1] = d[i + 2] = v; }
+  g.putImageData(im, 0, 0);
+  return c;
+}
+
+/**
+ * Herkende regels opschonen tot leesbare tekst:
+ * paginanummers en rommel eruit, afgebroken woorden weer heel, regels aan elkaar.
+ * @param {{text:string, confidence:number}[]} lines
+ */
+function cleanOcr(lines) {
+  const keep = [];
+  for (const l of lines || []) {
+    const t = String(l.text || "").replace(/\s+/g, " ").trim();
+    if (!t) continue;
+    const letters = (t.match(/\p{L}/gu) || []).length, chars = t.replace(/\s/g, "").length;
+    if (letters < 2 || letters / chars < 0.6) continue;              // paginanummer, streepjes, rommel
+    if ((l.confidence ?? 100) < 45) continue;                        // te onzeker (bijv. tekst in een plaatje)
+    keep.push(t);
+  }
+  let text = keep.join("\n")
+    .replace(/(\p{L})[-\u2010\u00AD]\n(\p{Ll})/gu, "$1$2")            // afgebroken woord: "woor-\nden" -> "woorden"
+    .replace(/\n/g, " ")
+    .replace(/[|_~^`<>{}\[\]\\=*#@]/g, "")
+    .replace(/\s+([.,!?;:])/g, "$1")
+    .replace(/\s+/g, " ").trim();
+  text = text.split(" ").filter(w => /\p{L}|\d/u.test(w)).join(" ");
+  return text.slice(0, 1500);
+}
+
+async function readOnDevice(file, onProgress) {
+  let T;
+  try { T = await loadTesseract(); } catch (e) { throw { code: "offline" }; }
+  const canvas = await preprocess(file);
+  const worker = await T.createWorker("nld", 1, {
+    logger: m => { if (onProgress && m && m.status === "recognizing text") onProgress(Math.round((m.progress || 0) * 100)); },
+  });
+  try {
+    const { data } = await worker.recognize(canvas);
+    const lines = (data.lines && data.lines.length) ? data.lines.map(l => ({ text: l.text, confidence: l.confidence }))
+      : String(data.text || "").split("\n").map(t => ({ text: t, confidence: data.confidence }));
+    const text = cleanOcr(lines);
+    if (text.split(" ").length < 3) throw { code: "no_text" };
+    return { text, syllables: {}, quiz: null };
+  } finally { try { await worker.terminate(); } catch (e) {} }
+}
+
 /**
  * @returns {Promise<{text:string, syllables:object, quiz:object|null}>}
  * @throws {{code:string}}  "not_configured" | "no_text" | "offline" | "failed"
  */
-async function readPhoto(file) {
+async function readPhoto(file, onProgress) {
   if (location.protocol === "file:") throw { code: "not_configured" };   // werkt alleen online
+  // Geen eigen server (zoals op GitHub Pages)? Dan op het toestel zelf lezen.
+  if (/github\.io$/.test(location.hostname) || window.LEESMAATJE_ON_DEVICE_OCR) return readOnDevice(file, onProgress);
   const payload = await toJpegBase64(file);
   let res;
   try { res = await fetch("/api/ocr", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }); }
-  catch (e) { throw { code: "offline" }; }
-  if (res.status === 404 || res.status === 501) throw { code: "not_configured" };
+  catch (e) { return readOnDevice(file, onProgress); }
+  if (res.status === 404 || res.status === 405 || res.status === 501) return readOnDevice(file, onProgress);
   if (!res.ok) throw { code: "failed" };
   const r = await res.json();
 
@@ -1177,14 +1268,14 @@ async function onPhoto(file) {
   go("s-read"); $("sayRead").classList.add("hidden");
   showOcr("busy", "Boekoe leest je bladzijde…", "Even geduld, dit duurt een paar seconden.");
   try {
-    const book = await readPhoto(file);
+    const book = await readPhoto(file, pct => { $("ocrSub").textContent = pct < 100 ? `Even geduld… ${pct}%` : "Bijna klaar!"; });
     hideOcr(); startBook({ title: "Jouw bladzijde", ...book }, true);
   } catch (e) {
     const c = e && e.code;
     const [msg, sub] =
       c === "no_text" ? ["Hmm, ik zie geen tekst op deze foto.", "Maak een foto van dichtbij, recht van boven en met goed licht."] :
       c === "not_configured" ? ["Foto's lezen staat nog niet aan.", "De app draait nog zonder server of zonder API-sleutel (zie README). Kies zolang een verhaaltje."] :
-      c === "offline" ? ["Geen internet?", "Controleer je verbinding en probeer het opnieuw."] :
+      c === "offline" ? ["Geen internet?", "De eerste keer heeft Boekoe internet nodig om te leren lezen. Controleer je verbinding en probeer het opnieuw."] :
       ["Oeps, het lezen van de foto lukte niet.", "Probeer een nieuwe foto, of kies een verhaaltje."];
     showOcr("error", msg, sub);
   }
@@ -1283,7 +1374,7 @@ $("readBtn").onclick = () => {
 };
 $("stopBtn").onclick = () => finish();
 $("copyLog").onclick = () => {
-  const txt = "LEESMAATJE LOGBOEK (versie 23)\n" + LOG.join("\n");
+  const txt = "LEESMAATJE LOGBOEK (versie 24)\n" + LOG.join("\n");
   const out = $("logOut"); out.value = txt; out.style.display = "";
   const ok = () => { $("copyLog").textContent = "✅ Gekopieerd! Plak het in de chat"; };
   try { navigator.clipboard.writeText(txt).then(ok, () => { out.select(); document.execCommand("copy"); ok(); }); }
@@ -1337,7 +1428,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 23 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 24 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1357,6 +1448,7 @@ function showMicError(t) { const e = $("micErr"); e.textContent = t; e.style.dis
 
 function onHeard(finalWords, interimWords) {
   if (!R.reading) return;
+  finalWords = splitDigits(finalWords); interimWords = splitDigits(interimWords);   // "321" -> 3 2 1
   const heardRaw = [...finalWords, ...interimWords];
   const heardStr = heardRaw.join(" ");
   if (heardStr !== R.heardStr) dlog("hoort: [" + finalWords.slice(-6).join(" ") + "] + (" + interimWords.join(" ") + ")");
@@ -1580,6 +1672,11 @@ $("stickerBtn").onclick = () => say("sticker", { el: $("sayDone") });
 $("againBtn").onclick = () => go("s-home");
 
 /* ================= 5. Ouder-overzicht ================= */
+// Luister-details (wat Boekoe hoort + logboek): alleen als een ouder het aanzet
+function applyDebug() { const on = LS.get("lm_debug", false); $("heardBox").style.display = on ? "" : "none"; $("dbgToggle").checked = on; }
+$("dbgToggle").onchange = () => { LS.set("lm_debug", $("dbgToggle").checked); applyDebug(); };
+applyDebug();
+
 function renderParent() {
   $("pTitle").textContent = `${childName() === "jij" ? "Je kind" : childName()} deze week`;
   const hist = sessions.filter(s => s.wpm > 0).slice(-7).map(s => s.wpm);
