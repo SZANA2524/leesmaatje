@@ -230,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 19</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 20</p><button class="btn ghost" id="copyLog" style="font-size:13px;padding:6px 10px;margin-top:4px">📋 Kopieer logboek</button><textarea id="logOut" readonly style="display:none;width:100%;height:120px;font-size:11px;margin-top:6px"></textarea></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -361,8 +361,14 @@ const THRESHOLDS = {
  *  We zijn bewust mild: de spraakherkenning verstaat kinderstemmen niet perfect,
  *  en een onterechte "fout" is voor een kind veel vervelender dan een gemiste.
  *  Korte woorden (t/m 5 letters) mogen één letter verschillen, langere iets meer. */
+// Twee letters omgedraaid ("must" voor "muts") is een verspreking of een foutje van de herkenning: telt als goed
+function swapped(a, b) {
+  if (a.length !== b.length || a.length < 3) return false;
+  const d = [...a].map((c, i) => c !== b[i] ? i : -1).filter(i => i >= 0);
+  return d.length === 2 && d[1] === d[0] + 1 && a[d[0]] === b[d[1]] && a[d[1]] === b[d[0]];
+}
 function matches(h, exp, t = THRESHOLDS) {
-  if (h === exp) return true;
+  if (h === exp || swapped(h, exp)) return true;
   if (exp.length <= 5) return h.length >= 2 && levenshtein(h, exp) <= 1;
   return similarity(h, exp) >= t.match;
 }
@@ -577,11 +583,11 @@ class Listener {
       const timer = setTimeout(() => { this.onState("debug", "afronden duurde te lang -> afgekapt"); try { rec.abort(); } catch (e) {} done(); }, 3000);   // Safari te traag: dan toch stoppen
       rec.onerror = null;
       rec.onend = () => { this.onState("debug", "uit (Boekoe praat)"); done(); };
-      // Net gestart (nog niets gehoord)? Dan gewoon afbreken: stop() op een net gestarte beurt
-      // kan Safari in de war brengen. Liep hij al een tijdje? Dan netjes afronden (laatste woorden komen dan nog door).
-      const young = !this.recStartedAt || Date.now() - this.recStartedAt < 1500 || !this.heardThisSession;
-      this.onState("debug", young ? "mic afbreken (net gestart)" : "mic netjes afronden");
-      try { young ? rec.abort() : rec.stop(); } catch (e) { done(); }
+      // Altijd AFBREKEN (abort), nooit stop(): uit het logboek van een echte iPhone bleek dat Safari na stop()
+      // + Boekoe's stem doof wordt. Na abort() hoort hij wel weer. Wat Safari al voorlopig gehoord had,
+      // telt gewoon mee (zie done()), dus er gaat niets verloren.
+      this.onState("debug", "mic uit (afbreken)");
+      try { rec.abort(); } catch (e) { done(); }
     });
     return this.haltP;
   }
@@ -1202,7 +1208,7 @@ $("readBtn").onclick = () => {
   }
   Object.assign(R, { statuses: R.expected.map(() => "pending"), pos: 0, startedAt: 0, lastProgress: Date.now(),
                      stuckAt: -1, misreadAt: -1, helped: new Set(), streak: 0, reading: true, forced: new Set(), helps: {}, helpMark: 0, lastHelpAt: 0, finalLen: 0,
-                     lastHeard: Date.now(), lastTalk: Date.now(), helping: false, burst: false, ready: false, micLost: false, tried: false, heardLen: 0, heardStr: "", micAliveAt: 0, resumedAt: 0, speaking: false, speechAt: 0 });
+                     lastHeard: Date.now(), lastTalk: Date.now(), helping: false, burst: false, skippedTogether: new Set(), ready: false, micLost: false, tried: false, heardLen: 0, heardStr: "", micAliveAt: 0, resumedAt: 0, speaking: false, speechAt: 0 });
   R.words.forEach(w => w.el.className = "w");
   $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
 
@@ -1222,7 +1228,7 @@ $("readBtn").onclick = () => {
 };
 $("stopBtn").onclick = () => finish();
 $("copyLog").onclick = () => {
-  const txt = "LEESMAATJE LOGBOEK (versie 19)\n" + LOG.join("\n");
+  const txt = "LEESMAATJE LOGBOEK (versie 20)\n" + LOG.join("\n");
   const out = $("logOut"); out.value = txt; out.style.display = "";
   const ok = () => { $("copyLog").textContent = "✅ Gekopieerd! Plak het in de chat"; };
   try { navigator.clipboard.writeText(txt).then(ok, () => { out.select(); document.execCommand("copy"); ok(); }); }
@@ -1275,7 +1281,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 19 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 20 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1321,7 +1327,7 @@ function onHeard(finalWords, interimWords) {
     if (s === "ok" || s === "fixed") {
       w.el.classList.add(R.helped.has(i) || s === "fixed" ? "help" : "ok");
       if (!R.startedAt) R.startedAt = Date.now();
-      if (R.helped.has(i)) {             // alleen "goed zo" als Boekoe echt geholpen had
+      if (R.helped.has(i) && !R.skippedTogether.has(i)) {   // alleen "goed zo" als het kind het zelf deed
         praise();   // hardop als het kind even pauzeert, anders alleen de ballon (niet onderbreken)   // hardop: het kind heeft het zelf verbeterd!
       } else if (/[.!?]$/.test(w.raw) && ++R.streak >= PATIENCE.sentencesPerCompliment && i < R.words.length - 1
                  && Date.now() - R.lastTalk > PATIENCE.complimentGap) {
@@ -1411,17 +1417,21 @@ function checkStuck() {
   // Geholpen, maar daarna helemaal niets meer gehoord? Dan is de microfoon waarschijnlijk weggevallen:
   // niet nog meer woorden als "hulp" markeren, maar het kind laten tikken om verder te lezen.
   if (R.helped.has(i) && R.lastHeard < R.lastHelpAt) {
-    const quiet = Date.now() - R.lastHelpAt;
+    const quiet = Date.now() - Math.max(R.lastHelpAt, R.micAliveAt);   // stilte telt pas vanaf dat de mic weer aan is
     if (VOICE_WHILE_READING && R.micAliveAt <= R.lastHelpAt) { if (quiet > 7000) askTap(); return; }   // microfoon kwam niet terug: laten tikken
-    if (quiet > PATIENCE.moveOnSilent) {                  // microfoon werkt, maar kind blijft stil: samen verder
-      dlog("samen verder na stilte bij " + R.words[i].raw); R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
+    if (quiet > PATIENCE.moveOnSilent) {
+      if (!(R.speechAt > R.lastHelpAt)) {                 // Safari hoorde sinds de hulp helemaal NIETS (ook geen geluid)
+        dlog("na hulp niets gehoord -> tik-knop"); askTap(); return;   // waarschijnlijk doof: een tik zet hem vers aan
+      }
+      // microfoon hoort wel iets, maar kind komt er niet uit: samen verder
+      dlog("samen verder na stilte bij " + R.words[i].raw); R.skippedTogether.add(i); R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
     }
     return;
   }
   if (R.stuckAt === i) {
     // Al twee keer geholpen en nog steeds stil? Dan gaan we samen verder: nooit vast blijven zitten.
     if (Date.now() - R.lastHelpAt > PATIENCE.moveOnAfter && Date.now() - R.lastHeard > PATIENCE.quietBeforeHelp) {
-      dlog("samen verder na stilte bij " + R.words[i].raw); R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
+      dlog("samen verder na stilte bij " + R.words[i].raw); R.skippedTogether.add(i); R.forced.add(i); onHeard(R.listener ? R.listener.finalWords : [], R.listener ? R.listener.interimWords : []);
     }
     return;
   }
