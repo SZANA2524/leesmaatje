@@ -230,7 +230,7 @@ details.heard p{margin-top:6px;background:#fff;border:1px solid var(--line);bord
       </div>
       <div class="say hidden" id="sayRead"><span class="say-face"></span><span class="say-text"></span><button class="replay" aria-label="Nog een keer horen">🔁</button></div>
       <p class="small err" id="micErr" style="display:none"></p>
-      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 16</p></details>
+      <details class="heard" id="heardBox" open><summary>👂 Wat Boekoe hoort</summary><p class="small" id="heardTxt">…</p><p class="small" id="micLog" style="opacity:.6">versie 17</p></details>
       <div style="flex:1"></div>
       <div class="row">
         <button class="btn big" id="readBtn" style="flex:1">🎤 Ik ga lezen</button>
@@ -554,22 +554,32 @@ class Listener {
    */
   halt() {
     if (!this.active) return Promise.resolve();
-    this.paused = true;
-    this.interimWords = [];
     clearTimeout(this.restartTimer);
-    this.prevFinal = [...this.finalWords];
-    this.cuts = []; this.sessionCount = 0;
-    const rec = this.rec; this.rec = null;
+    const rec = this.rec;
+    if (!rec) { this.paused = true; this.onState("paused"); return Promise.resolve(); }
+    if (this.haltP) return this.haltP;
+    // Netjes afronden i.p.v. afkappen: Safari geeft dan eerst nog de woorden door die het al gehoord had.
+    this.halting = true;
+    this.paused = true;
     this.onState("paused");
-    if (!rec) return Promise.resolve();
-    return new Promise(resolve => {
+    this.haltP = new Promise(resolve => {
       let doneIt = false;
-      const done = () => { if (doneIt) return; doneIt = true; clearTimeout(timer); resolve(); };
-      const timer = setTimeout(done, 1200);
-      rec.onresult = null; rec.onerror = null;
+      const done = () => {
+        if (doneIt) return; doneIt = true; clearTimeout(timer);
+        this.halting = false; this.haltP = null;
+        if (this.rec === rec) this.rec = null;
+        // Wat nog "voorlopig" was telt ook mee: het kind heeft het wel echt gezegd
+        if (this.interimWords.length) { this.finalWords.push(...this.interimWords); this.interimWords = []; }
+        this.prevFinal = [...this.finalWords];
+        this.cuts = []; this.sessionCount = 0;
+        resolve();
+      };
+      const timer = setTimeout(() => { try { rec.abort(); } catch (e) {} done(); }, 3000);   // Safari te traag: dan toch stoppen
+      rec.onerror = null;
       rec.onend = () => { this.onState("debug", "uit (Boekoe praat)"); done(); };
-      try { rec.abort(); } catch (e) { done(); }
+      try { rec.stop(); } catch (e) { done(); }
     });
+    return this.haltP;
   }
 
   /** Tijdelijk niet luisteren (bijv. terwijl Boekoe praat). */
@@ -624,7 +634,7 @@ class Listener {
       }
       this.sessionCount = all.length;
       this.sessionFinal = all.filter(x => x.fin).length;
-      if (this.paused) return;
+      if (this.paused && !this.halting) return;   // tijdens netjes afronden: woorden tellen nog mee
       // Woorden die binnenkwamen terwijl Boekoe praatte (iPhone) tellen niet mee
       const keep = all.filter((_, i) => !this.cuts.some(([a, b]) => i >= a && i < b));
       this.finalWords = [...this.prevFinal, ...keep.filter(x => x.fin).map(x => x.w)];
@@ -1137,6 +1147,7 @@ const PATIENCE = {
   moveOnAfter: 9000,        // na hulp nog steeds stil: dan samen verder naar het volgende woord
   moveOnSilent: 6000,       // na hulp helemaal niets meer gezegd: na zoveel ms samen verder
   firstWord: 6000,          // bij het allereerste woord: zo lang laten beginnen
+  afterBurst: 4500,         // iPhone: na een vlot gelezen stuk (Safari stuurt per zin door)
 };
 // iPhone (Safari) geeft woorden later door; daarom daar kortere wachttijden, anders stapelt de vertraging op
 // iPhone (Safari) geeft woorden pas na een tijdje door (soms pas als het kind even stopt). Daarom daar
@@ -1181,7 +1192,7 @@ $("readBtn").onclick = () => {
   }
   Object.assign(R, { statuses: R.expected.map(() => "pending"), pos: 0, startedAt: 0, lastProgress: Date.now(),
                      stuckAt: -1, misreadAt: -1, helped: new Set(), streak: 0, reading: true, forced: new Set(), helps: {}, helpMark: 0, lastHelpAt: 0, finalLen: 0,
-                     lastHeard: Date.now(), lastTalk: Date.now(), ready: false, micLost: false, tried: false, heardLen: 0, heardStr: "", micAliveAt: 0, resumedAt: 0, speaking: false, speechAt: 0 });
+                     lastHeard: Date.now(), lastTalk: Date.now(), helping: false, burst: false, ready: false, micLost: false, tried: false, heardLen: 0, heardStr: "", micAliveAt: 0, resumedAt: 0, speaking: false, speechAt: 0 });
   R.words.forEach(w => w.el.className = "w");
   $("readBtn").disabled = true; $("readBtn").textContent = "Boekoe praat… even wachten"; $("stopBtn").style.display = "";
 
@@ -1243,7 +1254,7 @@ function onMicState(state, detail) {
   }
   micLog.push(state === "debug" ? detail : state + (detail ? ": " + detail : ""));
   if (micLog.length > 6) micLog.shift();
-  const ml = $("micLog"); if (ml) ml.textContent = "versie 16 · " + micLog.join(" → ");
+  const ml = $("micLog"); if (ml) ml.textContent = "versie 17 · " + micLog.join(" → ");
   if (state === "debug") return;
   $("micwrap").classList.toggle("listening", state === "listening");
   if (state === "error") {
@@ -1301,15 +1312,17 @@ function onHeard(finalWords, interimWords) {
         R.misreadAt = i;
         clearTimeout(R.misreadTimer);
         const check = () => {
-          if (!R.reading || R.statuses[i] !== "misread" || R.pos !== i) return;
+          if (!R.reading || R.statuses[i] !== "misread" || R.pos !== i || R.helping) return;
           if (Player.playing || kidSpeaking() || Date.now() - R.lastHeard < PATIENCE.misreadQuiet) {   // kind praat nog: later nog eens kijken
             R.misreadTimer = setTimeout(check, 300); return;
           }
-          markHelp(i); R.streak = 0;
-          w.el.classList.add("fix");
-          // Boekoe wijst het ene woord aan: alleen dít woord nog eens, niet de hele tekst
-          say("misread", { el: $("sayRead"), mood: "fixit", extra: `👉 „${R.words[i].clean}” (alleen dit woord)`, silent: !VOICE_WHILE_READING });
-          nowYou(i);
+          helpAfterMic(i, () => R.statuses[i] === "misread", () => {
+            markHelp(i); R.streak = 0;
+            w.el.classList.add("fix");
+            // Boekoe wijst het ene woord aan: alleen dít woord nog eens, niet de hele tekst
+            say("misread", { el: $("sayRead"), mood: "fixit", extra: `👉 „${R.words[i].clean}” (alleen dit woord)`, silent: !VOICE_WHILE_READING });
+            nowYou(i);
+          });
         };
         R.misreadTimer = setTimeout(check, PATIENCE.misreadDelay);
       }
@@ -1318,7 +1331,12 @@ function onHeard(finalWords, interimWords) {
     }
   });
 
-  if (pos !== R.pos) { R.pos = pos; R.lastProgress = Date.now(); R.tried = false; }
+  if (pos !== R.pos) {
+    // Kwam er in één keer een heel stuk zin binnen? Dan leest het kind vlot en stuurt Safari per zin door:
+    // de volgende zin is waarschijnlijk al onderweg, dus dan niet meteen "checken".
+    R.burst = pos - R.pos >= 3;
+    R.pos = pos; R.lastProgress = Date.now(); R.tried = false;
+  }
   else if (heardRaw.length > R.heardLen && R.ready) {
     // Kind probeert het woord (hakkelt)? Niet als het gewoon een vorig woord herhaalt (terug-lezen).
     const lastW = normalize(heardRaw[heardRaw.length - 1] || "");
@@ -1361,7 +1379,7 @@ function markHelp(i) {
 function kidSpeaking() { return R.speaking && Date.now() - R.speechAt < 8000; }
 
 function checkStuck() {
-  if (!R.reading || !R.ready || R.micLost || Player.playing || kidSpeaking()) {
+  if (!R.reading || !R.ready || R.micLost || Player.playing || R.helping || kidSpeaking()) {
     R.lastProgress = Math.max(R.lastProgress, Date.now() - 300); return;      // nooit onderbreken terwijl het kind praat
   }
   const i = R.pos; if (i >= R.words.length) return;
@@ -1384,12 +1402,35 @@ function checkStuck() {
   }
   let wait = R.statuses[i] === "misread" ? PATIENCE.stuckAfterMisread : R.tried ? PATIENCE.stuckAfterTry : PATIENCE.stuckAfter;
   if (i === 0 && !R.startedAt) wait = Math.max(wait, PATIENCE.firstWord);   // nog niets gelezen: rustig laten beginnen
+  if (R.burst && IS_IOS && !R.tried) wait = Math.max(wait, PATIENCE.afterBurst); // vlot gelezen: volgende zin is onderweg
   if (Date.now() - R.lastProgress > wait && Date.now() - R.lastHeard > PATIENCE.quietBeforeHelp) {
+    helpAfterMic(i, () => true, () => {
     R.stuckAt = i; markHelp(i); R.streak = 0;
     R.words[i].el.classList.add("help");
     say("stuck", { el: $("sayRead"), mood: "tip", extra: syllables(R.words[i].clean, BOOK.syllables).join(" · ").replace(/^./, c => /[A-Z]/.test(R.words[i].raw[0]) ? c.toUpperCase() : c), silent: !VOICE_WHILE_READING });
     nowYou(i);
+    });
   }
+}
+
+/**
+ * Voordat Boekoe helpt: eerst de microfoon NETJES uit (Safari geeft dan nog de laatste woorden door).
+ * Blijkt het kind het woord intussen al gelezen te hebben, dan zegt Boekoe niets en luistert ze verder.
+ */
+function helpAfterMic(i, stillNeeded, doHelp) {
+  if (R.helping) return;
+  R.helping = true;
+  const L = R.listener;
+  (L ? L.halt() : Promise.resolve()).then(() => {
+    R.helping = false;
+    if (!R.reading) return;
+    if (R.pos !== i || !stillNeeded()) {             // het kind was al verder: niets zeggen, gewoon weer luisteren
+      R.lastProgress = Date.now();
+      if (R.listener && !Player.playing) R.listener.resume();
+      return;
+    }
+    doHelp();
+  });
 }
 
 function stopReading(resetBtn) {
